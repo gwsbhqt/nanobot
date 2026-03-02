@@ -383,6 +383,7 @@ class AgentLoop:
         if cmd == "/new":
             lock = self._consolidation_locks.setdefault(session.key, asyncio.Lock())
             self._consolidating.add(session.key)
+            archive_skipped = False
             try:
                 async with lock:
                     snapshot = session.messages[session.last_consolidated:]
@@ -390,22 +391,23 @@ class AgentLoop:
                         temp = Session(key=session.key)
                         temp.messages = list(snapshot)
                         if not await self._consolidate_memory(temp, archive_all=True):
-                            return OutboundMessage(
-                                channel=msg.channel, chat_id=msg.chat_id,
-                                content="Memory archival failed, session not cleared. Please try again.",
-                            )
+                            archive_skipped = True
+                            logger.warning("/new archival skipped for {}: consolidate returned false", session.key)
             except Exception:
                 logger.exception("/new archival failed for {}", session.key)
-                return OutboundMessage(
-                    channel=msg.channel, chat_id=msg.chat_id,
-                    content="Memory archival failed, session not cleared. Please try again.",
-                )
+                archive_skipped = True
             finally:
                 self._consolidating.discard(session.key)
 
             session.clear()
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
+            if archive_skipped:
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content="New session started. (Memory archival skipped.)",
+                )
             return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id,
                                   content="New session started.")
         if cmd == "/help":

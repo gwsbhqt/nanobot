@@ -121,6 +121,45 @@ class TestMessageToolSuppressLogic:
         assert result.content == "I've completed processing but have no response to give."
         assert loop.provider.chat.await_count == 2
 
+    @pytest.mark.asyncio
+    async def test_new_clears_session_when_archival_fails(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        loop._consolidate_memory = AsyncMock(return_value=False)
+
+        session = loop.sessions.get_or_create("feishu:chat123")
+        session.messages = [
+            {"role": "user", "content": "hi", "timestamp": "2026-03-02T18:00:00"},
+            {"role": "assistant", "content": "hello", "timestamp": "2026-03-02T18:00:01"},
+        ]
+        loop.sessions.save(session)
+
+        msg = InboundMessage(channel="feishu", sender_id="user1", chat_id="chat123", content="/new")
+        result = await loop._process_message(msg)
+
+        assert result is not None
+        assert result.content == "New session started. (Memory archival skipped.)"
+        fresh = loop.sessions.get_or_create("feishu:chat123")
+        assert fresh.messages == []
+
+    @pytest.mark.asyncio
+    async def test_new_clears_session_when_archival_succeeds(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        loop._consolidate_memory = AsyncMock(return_value=True)
+
+        session = loop.sessions.get_or_create("feishu:chat123")
+        session.messages = [
+            {"role": "user", "content": "hi", "timestamp": "2026-03-02T18:00:00"},
+        ]
+        loop.sessions.save(session)
+
+        msg = InboundMessage(channel="feishu", sender_id="user1", chat_id="chat123", content="/new")
+        result = await loop._process_message(msg)
+
+        assert result is not None
+        assert result.content == "New session started."
+        fresh = loop.sessions.get_or_create("feishu:chat123")
+        assert fresh.messages == []
+
 
 class TestMessageToolTurnTracking:
 
