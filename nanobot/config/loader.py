@@ -11,6 +11,11 @@ def get_config_path() -> Path:
     return get_data_dir() / "config.json"
 
 
+def get_config_example_path() -> Path:
+    """Get the default example configuration file path."""
+    return get_data_dir() / "config.example.json"
+
+
 def get_data_dir() -> Path:
     """Get the nanobot data directory."""
     from nanobot.utils.helpers import get_data_path
@@ -53,10 +58,64 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
     path = config_path or get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    data = config.model_dump(by_alias=True)
+    data = config.model_dump(
+        by_alias=True,
+        exclude_defaults=True,
+        exclude_none=True,
+    )
+    data = _prune_empty(data)
 
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def save_config_example(config_path: Path | None = None) -> Path:
+    """Write a guided example config for manual onboarding."""
+    path = config_path or get_config_example_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "agents": {
+            "defaults": {
+                "provider": "custom",
+                "model": "gpt-5.3-codex",
+                "workspace": ".nanobot/workspace",
+            }
+        },
+        "providers": {
+            "custom": {
+                "apiKey": "YOUR_API_KEY",
+                "apiBase": "https://your-openai-compatible-endpoint/v1",
+            },
+            "openrouter": {
+                "apiKey": "sk-or-...",
+            },
+        },
+        "channels": {
+            "feishu": {
+                "enabled": False,
+                "appId": "cli_xxx",
+                "appSecret": "xxx",
+                "allowFrom": [],
+                "reactEmoji": "THUMBSUP",
+            }
+        },
+        "tools": {
+            "web": {
+                "search": {
+                    "apiKey": "YOUR_BRAVE_SEARCH_API_KEY",
+                    "maxResults": 5,
+                }
+            }
+        },
+    }
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    return path
 
 
 def _migrate_config(data: dict) -> dict:
@@ -67,3 +126,14 @@ def _migrate_config(data: dict) -> dict:
     if "restrictToWorkspace" in exec_cfg and "restrictToWorkspace" not in tools:
         tools["restrictToWorkspace"] = exec_cfg.pop("restrictToWorkspace")
     return data
+
+
+def _prune_empty(value):
+    """Recursively remove empty values from config payload."""
+    if isinstance(value, dict):
+        pruned = {k: _prune_empty(v) for k, v in value.items()}
+        return {k: v for k, v in pruned.items() if v not in ("", None, [], {})}
+    if isinstance(value, list):
+        pruned = [_prune_empty(v) for v in value]
+        return [v for v in pruned if v not in ("", None, [], {})]
+    return value

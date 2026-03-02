@@ -156,7 +156,12 @@ def main(
 @app.command()
 def onboard():
     """Initialize nanobot configuration and workspace."""
-    from nanobot.config.loader import get_config_path, load_config, save_config
+    from nanobot.config.loader import (
+        get_config_path,
+        load_config,
+        save_config,
+        save_config_example,
+    )
     from nanobot.config.schema import Config
     from nanobot.utils.helpers import get_workspace_path
     
@@ -177,6 +182,9 @@ def onboard():
     else:
         save_config(Config())
         console.print(f"[green]✓[/green] Created config at {config_path}")
+
+    example_path = save_config_example()
+    console.print(f"[green]✓[/green] Wrote config example at {example_path}")
     
     # Create workspace
     workspace = get_workspace_path()
@@ -189,7 +197,7 @@ def onboard():
     
     console.print(f"\n{__logo__} nanobot is ready!")
     console.print("\nNext steps:")
-    console.print("  1. Configure provider in [cyan].nanobot/config.json[/cyan]")
+    console.print("  1. Copy values from [cyan].nanobot/config.example.json[/cyan] to [cyan].nanobot/config.json[/cyan]")
     console.print("     (supported: custom, openrouter)")
     console.print("  2. Chat: [cyan]nanobot agent -m \"Hello!\"[/cyan]")
     console.print("  3. Start gateway: [cyan]nanobot gateway[/cyan]")
