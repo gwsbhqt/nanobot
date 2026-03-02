@@ -11,14 +11,28 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+def get_repo_root(start: Path | None = None) -> Path:
+    """Find the repository root from cwd (marker: .git or pyproject.toml)."""
+    current = (start or Path.cwd()).resolve()
+    for candidate in [current, *current.parents]:
+        if (candidate / ".git").exists() or (candidate / "pyproject.toml").exists():
+            return candidate
+    return current
+
+
 def get_data_path() -> Path:
-    """~/.nanobot data directory."""
-    return ensure_dir(Path.home() / ".nanobot")
+    """Project-local data directory: <repo>/.nanobot."""
+    return ensure_dir(get_repo_root() / ".nanobot")
 
 
 def get_workspace_path(workspace: str | None = None) -> Path:
-    """Resolve and ensure workspace path. Defaults to ~/.nanobot/workspace."""
-    path = Path(workspace).expanduser() if workspace else Path.home() / ".nanobot" / "workspace"
+    """Resolve and ensure workspace path. Defaults to <repo>/.nanobot/workspace."""
+    if workspace:
+        path = Path(workspace).expanduser()
+        if not path.is_absolute():
+            path = get_repo_root() / path
+    else:
+        path = get_data_path() / "workspace"
     return ensure_dir(path)
 
 

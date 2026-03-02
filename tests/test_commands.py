@@ -8,8 +8,7 @@ from typer.testing import CliRunner
 from nanobot.cli.commands import app
 from nanobot.config.schema import Config
 from nanobot.providers.litellm_provider import LiteLLMProvider
-from nanobot.providers.openai_codex_provider import _strip_model_prefix
-from nanobot.providers.registry import find_by_model
+from nanobot.providers.registry import find_gateway
 
 runner = CliRunner()
 
@@ -19,7 +18,7 @@ def mock_paths():
     """Mock config/workspace paths for test isolation."""
     with patch("nanobot.config.loader.get_config_path") as mock_cp, \
          patch("nanobot.config.loader.save_config") as mock_sc, \
-         patch("nanobot.config.loader.load_config") as mock_lc, \
+         patch("nanobot.config.loader.load_config"), \
          patch("nanobot.utils.helpers.get_workspace_path") as mock_ws:
 
         base_dir = Path("./test_onboard_data")
@@ -96,35 +95,38 @@ def test_onboard_existing_workspace_safe_create(mock_paths):
     assert (workspace_dir / "AGENTS.md").exists()
 
 
-def test_config_matches_github_copilot_codex_with_hyphen_prefix():
+def test_config_matches_custom_provider_by_default():
     config = Config()
-    config.agents.defaults.model = "github-copilot/gpt-5.3-codex"
+    config.agents.defaults.model = "gpt-5.3-codex"
+    config.providers.custom.api_key = "test-key"
+    config.providers.custom.api_base = "https://example.com/v1"
 
-    assert config.get_provider_name() == "github_copilot"
+    assert config.get_provider_name() == "custom"
 
 
-def test_config_matches_openai_codex_with_hyphen_prefix():
+def test_config_matches_openrouter_with_prefix():
     config = Config()
-    config.agents.defaults.model = "openai-codex/gpt-5.1-codex"
+    config.agents.defaults.provider = "auto"
+    config.agents.defaults.model = "openrouter/gpt-5.3-codex"
+    config.providers.openrouter.api_key = "sk-or-test"
 
-    assert config.get_provider_name() == "openai_codex"
+    assert config.get_provider_name() == "openrouter"
 
 
-def test_find_by_model_prefers_explicit_prefix_over_generic_codex_keyword():
-    spec = find_by_model("github-copilot/gpt-5.3-codex")
+def test_find_gateway_detects_openrouter_by_key_prefix():
+    spec = find_gateway(api_key="sk-or-test")
 
     assert spec is not None
-    assert spec.name == "github_copilot"
+    assert spec.name == "openrouter"
 
 
-def test_litellm_provider_canonicalizes_github_copilot_hyphen_prefix():
-    provider = LiteLLMProvider(default_model="github-copilot/gpt-5.3-codex")
+def test_litellm_provider_gateway_adds_openrouter_prefix():
+    provider = LiteLLMProvider(
+        api_key="sk-or-test",
+        provider_name="openrouter",
+        default_model="gpt-5.3-codex",
+    )
 
-    resolved = provider._resolve_model("github-copilot/gpt-5.3-codex")
+    resolved = provider._resolve_model("gpt-5.3-codex")
 
-    assert resolved == "github_copilot/gpt-5.3-codex"
-
-
-def test_openai_codex_strip_prefix_supports_hyphen_and_underscore():
-    assert _strip_model_prefix("openai-codex/gpt-5.1-codex") == "gpt-5.1-codex"
-    assert _strip_model_prefix("openai_codex/gpt-5.1-codex") == "gpt-5.1-codex"
+    assert resolved == "openrouter/gpt-5.3-codex"
