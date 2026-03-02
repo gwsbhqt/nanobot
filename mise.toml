@@ -1,0 +1,22 @@
+[tools]
+python = "3.12"
+
+[env]
+_.path = ["./bin"]
+PIP_DISABLE_PIP_VERSION_CHECK = "1"
+
+[tasks.setup]
+description = "Install nanobot and dependencies into the active mise Python"
+run = [
+  "python -m pip install --upgrade pip",
+  "python -m pip install -e .",
+]
+
+[tasks.status]
+description = "Show nanobot status"
+run = "python -m nanobot.cli.commands status"
+
+[tasks.smoke]
+description = "Smoke-test direct LLM call without IM channels"
+run = "python -m nanobot.cli.commands agent --logs -m \"只回复：LLM接入成功\""
+
