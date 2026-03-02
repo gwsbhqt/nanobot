@@ -1,6 +1,7 @@
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -9,6 +10,7 @@ from typer.testing import CliRunner
 from nanobot.cli.commands import app
 from nanobot.config.loader import save_config, save_config_example
 from nanobot.config.schema import Config
+from nanobot.providers.custom_provider import CustomProvider
 from nanobot.providers.litellm_provider import LiteLLMProvider
 from nanobot.providers.registry import find_gateway
 
@@ -184,3 +186,43 @@ def test_save_config_example_contains_guided_fields(tmp_path):
     assert payload["providers"]["custom"]["apiKey"] == "YOUR_API_KEY"
     assert payload["providers"]["openrouter"]["apiKey"] == "sk-or-..."
     assert payload["channels"]["feishu"]["enabled"] is False
+
+
+def test_custom_provider_parse_uses_refusal_when_content_empty():
+    provider = CustomProvider(api_key="test", api_base="https://example.com/v1", default_model="gpt-5.3-codex")
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=None, refusal="I can not do that right now.", tool_calls=[]),
+                finish_reason="stop",
+            )
+        ],
+        usage=None,
+    )
+
+    parsed = provider._parse(response)
+
+    assert parsed.content == "I can not do that right now."
+    assert parsed.finish_reason == "stop"
+
+
+def test_litellm_provider_parse_uses_refusal_when_content_empty():
+    provider = LiteLLMProvider(
+        api_key="sk-or-test",
+        provider_name="openrouter",
+        default_model="gpt-5.3-codex",
+    )
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=None, refusal="Refused", tool_calls=[]),
+                finish_reason="stop",
+            )
+        ],
+        usage=None,
+    )
+
+    parsed = provider._parse_response(response)
+
+    assert parsed.content == "Refused"
+    assert parsed.finish_reason == "stop"

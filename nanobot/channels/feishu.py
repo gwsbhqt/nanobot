@@ -24,11 +24,13 @@ try:
         CreateFileRequestBody,
         CreateImageRequest,
         CreateImageRequestBody,
-        CreateMessageReactionRequest,
-        CreateMessageReactionRequestBody,
         CreateMessageRequest,
         CreateMessageRequestBody,
+        CreateMessageReactionRequest,
+        CreateMessageReactionRequestBody,
+        DeleteMessageReactionRequest,
         Emoji,
+        GetFileRequest,
         GetMessageResourceRequest,
         P2ImMessageReceiveV1,
     )
@@ -70,7 +72,7 @@ def _extract_share_card_content(content_json: dict, msg_type: str) -> str:
 def _extract_interactive_content(content: dict) -> list[str]:
     """Recursively extract text and links from interactive card content."""
     parts = []
-
+    
     if isinstance(content, str):
         try:
             content = json.loads(content)
@@ -104,19 +106,19 @@ def _extract_interactive_content(content: dict) -> list[str]:
             header_text = header_title.get("content", "") or header_title.get("text", "")
             if header_text:
                 parts.append(f"title: {header_text}")
-
+    
     return parts
 
 
 def _extract_element_content(element: dict) -> list[str]:
     """Extract content from a single card element."""
     parts = []
-
+    
     if not isinstance(element, dict):
         return parts
-
+    
     tag = element.get("tag", "")
-
+    
     if tag in ("markdown", "lark_md"):
         content = element.get("content", "")
         if content:
@@ -177,71 +179,69 @@ def _extract_element_content(element: dict) -> list[str]:
     else:
         for ne in element.get("elements", []):
             parts.extend(_extract_element_content(ne))
-
+    
     return parts
 
 
 def _extract_post_content(content_json: dict) -> tuple[str, list[str]]:
-    """Extract text and image keys from Feishu post (rich text) message.
-
-    Handles three payload shapes:
-    - Direct:    {"title": "...", "content": [[...]]}
-    - Localized: {"zh_cn": {"title": "...", "content": [...]}}
-    - Wrapped:   {"post": {"zh_cn": {"title": "...", "content": [...]}}}
+    """Extract text and image keys from Feishu post (rich text) message content.
+    
+    Supports two formats:
+    1. Direct format: {"title": "...", "content": [...]}
+    2. Localized format: {"zh_cn": {"title": "...", "content": [...]}}
+    
+    Returns:
+        (text, image_keys) - extracted text and list of image keys
     """
-
-    def _parse_block(block: dict) -> tuple[str | None, list[str]]:
-        if not isinstance(block, dict) or not isinstance(block.get("content"), list):
+    def extract_from_lang(lang_content: dict) -> tuple[str | None, list[str]]:
+        if not isinstance(lang_content, dict):
             return None, []
-        texts, images = [], []
-        if title := block.get("title"):
-            texts.append(title)
-        for row in block["content"]:
-            if not isinstance(row, list):
+        title = lang_content.get("title", "")
+        content_blocks = lang_content.get("content", [])
+        if not isinstance(content_blocks, list):
+            return None, []
+        text_parts = []
+        image_keys = []
+        if title:
+            text_parts.append(title)
+        for block in content_blocks:
+            if not isinstance(block, list):
                 continue
-            for el in row:
-                if not isinstance(el, dict):
-                    continue
-                tag = el.get("tag")
-                if tag in ("text", "a"):
-                    texts.append(el.get("text", ""))
-                elif tag == "at":
-                    texts.append(f"@{el.get('user_name', 'user')}")
-                elif tag == "img" and (key := el.get("image_key")):
-                    images.append(key)
-        return (" ".join(texts).strip() or None), images
-
-    # Unwrap optional {"post": ...} envelope
-    root = content_json
-    if isinstance(root, dict) and isinstance(root.get("post"), dict):
-        root = root["post"]
-    if not isinstance(root, dict):
-        return "", []
-
-    # Direct format
-    if "content" in root:
-        text, imgs = _parse_block(root)
-        if text or imgs:
-            return text or "", imgs
-
-    # Localized: prefer known locales, then fall back to any dict child
-    for key in ("zh_cn", "en_us", "ja_jp"):
-        if key in root:
-            text, imgs = _parse_block(root[key])
-            if text or imgs:
-                return text or "", imgs
-    for val in root.values():
-        if isinstance(val, dict):
-            text, imgs = _parse_block(val)
-            if text or imgs:
-                return text or "", imgs
-
+            for element in block:
+                if isinstance(element, dict):
+                    tag = element.get("tag")
+                    if tag == "text":
+                        text_parts.append(element.get("text", ""))
+                    elif tag == "a":
+                        text_parts.append(element.get("text", ""))
+                    elif tag == "at":
+                        text_parts.append(f"@{element.get('user_name', 'user')}")
+                    elif tag == "img":
+                        img_key = element.get("image_key")
+                        if img_key:
+                            image_keys.append(img_key)
+        text = " ".join(text_parts).strip() if text_parts else None
+        return text, image_keys
+    
+    # Try direct format first
+    if "content" in content_json:
+        text, images = extract_from_lang(content_json)
+        if text or images:
+            return text or "", images
+    
+    # Try localized format
+    for lang_key in ("zh_cn", "en_us", "ja_jp"):
+        lang_content = content_json.get(lang_key)
+        text, images = extract_from_lang(lang_content)
+        if text or images:
+            return text or "", images
+    
     return "", []
 
 
 def _extract_post_text(content_json: dict) -> str:
     """Extract plain text from Feishu post (rich text) message content.
-
+    
     Legacy wrapper for _extract_post_content, returns only text.
     """
     text, _ = _extract_post_content(content_json)
@@ -251,17 +251,20 @@ def _extract_post_text(content_json: dict) -> str:
 class FeishuChannel(BaseChannel):
     """
     Feishu/Lark channel using WebSocket long connection.
-
+    
     Uses WebSocket to receive events - no public IP or webhook required.
-
+    
     Requires:
     - App ID and App Secret from Feishu Open Platform
     - Bot capability enabled
     - Event subscription enabled (im.message.receive_v1)
     """
-
+    
     name = "feishu"
-
+    _EMOJI_ALIASES = {"GET": "OnIt"}
+    _ACK_EMOJI = "OnIt"
+    _DONE_EMOJI = "DONE"
+    
     def __init__(self, config: FeishuConfig, bus: MessageBus):
         super().__init__(config, bus)
         self.config: FeishuConfig = config
@@ -269,28 +272,29 @@ class FeishuChannel(BaseChannel):
         self._ws_client: Any = None
         self._ws_thread: threading.Thread | None = None
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()  # Ordered dedup cache
+        self._pending_reactions: OrderedDict[str, tuple[str, str]] = OrderedDict()
         self._loop: asyncio.AbstractEventLoop | None = None
-
+    
     async def start(self) -> None:
         """Start the Feishu bot with WebSocket long connection."""
         if not FEISHU_AVAILABLE:
             logger.error("Feishu SDK not installed. Run: pip install lark-oapi")
             return
-
+        
         if not self.config.app_id or not self.config.app_secret:
             logger.error("Feishu app_id and app_secret not configured")
             return
-
+        
         self._running = True
         self._loop = asyncio.get_running_loop()
-
+        
         # Create Lark client for sending messages
         self._client = lark.Client.builder() \
             .app_id(self.config.app_id) \
             .app_secret(self.config.app_secret) \
             .log_level(lark.LogLevel.INFO) \
             .build()
-
+        
         # Create event handler (only register message receive, ignore other events)
         event_handler = lark.EventDispatcherHandler.builder(
             self.config.encrypt_key or "",
@@ -298,7 +302,7 @@ class FeishuChannel(BaseChannel):
         ).register_p2_im_message_receive_v1(
             self._on_message_sync
         ).build()
-
+        
         # Create WebSocket client for long connection
         self._ws_client = lark.ws.Client(
             self.config.app_id,
@@ -306,7 +310,7 @@ class FeishuChannel(BaseChannel):
             event_handler=event_handler,
             log_level=lark.LogLevel.INFO
         )
-
+        
         # Start WebSocket client in a separate thread with reconnect loop
         def run_ws():
             while self._running:
@@ -315,19 +319,18 @@ class FeishuChannel(BaseChannel):
                 except Exception as e:
                     logger.warning("Feishu WebSocket error: {}", e)
                 if self._running:
-                    import time
-                    time.sleep(5)
-
+                    import time; time.sleep(5)
+        
         self._ws_thread = threading.Thread(target=run_ws, daemon=True)
         self._ws_thread.start()
-
+        
         logger.info("Feishu bot started with WebSocket long connection")
         logger.info("No public IP required - using WebSocket to receive events")
-
+        
         # Keep running until stopped
         while self._running:
             await asyncio.sleep(1)
-
+    
     async def stop(self) -> None:
         """
         Stop the Feishu bot.
@@ -338,8 +341,8 @@ class FeishuChannel(BaseChannel):
         """
         self._running = False
         logger.info("Feishu bot stopped")
-
-    def _add_reaction_sync(self, message_id: str, emoji_type: str) -> None:
+    
+    def _add_reaction_sync(self, message_id: str, emoji_type: str) -> str | None:
         """Sync helper for adding reaction (runs in thread pool)."""
         try:
             request = CreateMessageReactionRequest.builder() \
@@ -349,28 +352,84 @@ class FeishuChannel(BaseChannel):
                     .reaction_type(Emoji.builder().emoji_type(emoji_type).build())
                     .build()
                 ).build()
-
+            
             response = self._client.im.v1.message_reaction.create(request)
-
+            
             if not response.success():
                 logger.warning("Failed to add reaction: code={}, msg={}", response.code, response.msg)
-            else:
-                logger.debug("Added {} reaction to message {}", emoji_type, message_id)
+                return None
+
+            reaction_id = response.data.reaction_id if response.data else None
+            logger.debug("Added {} reaction to message {} (reaction_id={})", emoji_type, message_id, reaction_id)
+            return reaction_id
         except Exception as e:
             logger.warning("Error adding reaction: {}", e)
+            return None
 
-    async def _add_reaction(self, message_id: str, emoji_type: str = "THUMBSUP") -> None:
+    def _normalize_emoji(self, emoji_type: str | None, fallback: str) -> str:
+        """Normalize configured emoji aliases to Feishu emoji types."""
+        value = (emoji_type or "").strip() or fallback
+        return self._EMOJI_ALIASES.get(value, value)
+
+    async def _add_reaction(self, message_id: str, emoji_type: str = "OnIt") -> str | None:
         """
         Add a reaction emoji to a message (non-blocking).
-
-        Common emoji types: THUMBSUP, OK, EYES, DONE, OnIt, HEART
+        
+        Common emoji types: THUMBSUP, OK, EYES, DONE, OnIt(GET), HEART
         """
         if not self._client or not Emoji:
+            return None
+        
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._add_reaction_sync, message_id, emoji_type)
+
+    def _track_reaction(self, message_id: str, reaction_id: str, emoji_type: str) -> None:
+        """Track message reaction ids so we can remove them after sending the final reply."""
+        self._pending_reactions[message_id] = (reaction_id, emoji_type)
+        self._pending_reactions.move_to_end(message_id)
+        while len(self._pending_reactions) > 1000:
+            self._pending_reactions.popitem(last=False)
+
+    def _remove_reaction_sync(self, message_id: str, reaction_id: str, emoji_type: str) -> bool:
+        """Sync helper for removing a reaction from a message."""
+        try:
+            request = (
+                DeleteMessageReactionRequest.builder()
+                .message_id(message_id)
+                .reaction_id(reaction_id)
+                .build()
+            )
+            response = self._client.im.v1.message_reaction.delete(request)
+            if not response.success():
+                logger.warning(
+                    "Failed to remove {} reaction from message {}: code={}, msg={}",
+                    emoji_type, message_id, response.code, response.msg,
+                )
+                return False
+            logger.debug("Removed {} reaction from message {}", emoji_type, message_id)
+            return True
+        except Exception as e:
+            logger.warning("Error removing reaction from message {}: {}", message_id, e)
+            return False
+
+    async def _finalize_tracked_reaction(self, message_id: str) -> None:
+        """Remove tracked ack reaction and mark the message as DONE."""
+        if not self._client or not message_id:
             return
 
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._add_reaction_sync, message_id, emoji_type)
+        tracked = self._pending_reactions.pop(message_id, None)
+        if not tracked:
+            return
 
+        reaction_id, emoji_type = tracked
+        loop = asyncio.get_running_loop()
+        removed = await loop.run_in_executor(
+            None, self._remove_reaction_sync, message_id, reaction_id, emoji_type
+        )
+        if removed:
+            done_emoji = self._normalize_emoji(self._DONE_EMOJI, self._DONE_EMOJI)
+            await self._add_reaction(message_id, done_emoji)
+    
     # Regex to match markdown tables (header + separator + data rows)
     _TABLE_RE = re.compile(
         r"((?:^[ \t]*\|.+\|[ \t]*\n)(?:^[ \t]*\|[-:\s|]+\|[ \t]*\n)(?:^[ \t]*\|.+\|[ \t]*\n?)+)",
@@ -384,13 +443,12 @@ class FeishuChannel(BaseChannel):
     @staticmethod
     def _parse_md_table(table_text: str) -> dict | None:
         """Parse a markdown table into a Feishu table element."""
-        lines = [_line.strip() for _line in table_text.strip().split("\n") if _line.strip()]
+        lines = [l.strip() for l in table_text.strip().split("\n") if l.strip()]
         if len(lines) < 3:
             return None
-        def split(_line: str) -> list[str]:
-            return [c.strip() for c in _line.strip("|").split("|")]
+        split = lambda l: [c.strip() for c in l.strip("|").split("|")]
         headers = split(lines[0])
-        rows = [split(_line) for _line in lines[2:]]
+        rows = [split(l) for l in lines[2:]]
         columns = [{"tag": "column", "name": f"c{i}", "display_name": h, "width": "auto"}
                    for i, h in enumerate(headers)]
         return {
@@ -531,10 +589,6 @@ class FeishuChannel(BaseChannel):
         self, message_id: str, file_key: str, resource_type: str = "file"
     ) -> tuple[bytes | None, str | None]:
         """Download a file/audio/media from a Feishu message by message_id and file_key."""
-        # Feishu API only accepts 'image' or 'file' as type parameter
-        # Convert 'audio' to 'file' for API compatibility
-        if resource_type == "audio":
-            resource_type = "file"
         try:
             request = (
                 GetMessageResourceRequest.builder()
@@ -632,6 +686,7 @@ class FeishuChannel(BaseChannel):
             logger.warning("Feishu client not initialized")
             return
 
+        sent_any = False
         try:
             receive_id_type = "chat_id" if msg.chat_id.startswith("oc_") else "open_id"
             loop = asyncio.get_running_loop()
@@ -644,29 +699,38 @@ class FeishuChannel(BaseChannel):
                 if ext in self._IMAGE_EXTS:
                     key = await loop.run_in_executor(None, self._upload_image_sync, file_path)
                     if key:
-                        await loop.run_in_executor(
+                        ok = await loop.run_in_executor(
                             None, self._send_message_sync,
                             receive_id_type, msg.chat_id, "image", json.dumps({"image_key": key}, ensure_ascii=False),
                         )
+                        sent_any = sent_any or bool(ok)
                 else:
                     key = await loop.run_in_executor(None, self._upload_file_sync, file_path)
                     if key:
                         media_type = "audio" if ext in self._AUDIO_EXTS else "file"
-                        await loop.run_in_executor(
+                        ok = await loop.run_in_executor(
                             None, self._send_message_sync,
                             receive_id_type, msg.chat_id, media_type, json.dumps({"file_key": key}, ensure_ascii=False),
                         )
+                        sent_any = sent_any or bool(ok)
 
             if msg.content and msg.content.strip():
                 card = {"config": {"wide_screen_mode": True}, "elements": self._build_card_elements(msg.content)}
-                await loop.run_in_executor(
+                ok = await loop.run_in_executor(
                     None, self._send_message_sync,
                     receive_id_type, msg.chat_id, "interactive", json.dumps(card, ensure_ascii=False),
                 )
+                sent_any = sent_any or bool(ok)
+
+            # Progress chunks should not clear ack emoji early; clear once the final response is sent.
+            is_progress = bool(msg.metadata.get("_progress"))
+            source_message_id = msg.metadata.get("message_id")
+            if sent_any and not is_progress and isinstance(source_message_id, str):
+                await self._finalize_tracked_reaction(source_message_id)
 
         except Exception as e:
             logger.error("Error sending Feishu message: {}", e)
-
+    
     def _on_message_sync(self, data: "P2ImMessageReceiveV1") -> None:
         """
         Sync handler for incoming messages (called from WebSocket thread).
@@ -674,7 +738,7 @@ class FeishuChannel(BaseChannel):
         """
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self._on_message(data), self._loop)
-
+    
     async def _on_message(self, data: "P2ImMessageReceiveV1") -> None:
         """Handle incoming message from Feishu."""
         try:
@@ -701,8 +765,11 @@ class FeishuChannel(BaseChannel):
             chat_type = message.chat_type
             msg_type = message.message_type
 
-            # Add reaction
-            await self._add_reaction(message_id, self.config.react_emoji)
+            # Add reaction as an ack and track reaction id for post-reply cleanup.
+            ack_emoji = self._normalize_emoji(self.config.react_emoji, self._ACK_EMOJI)
+            reaction_id = await self._add_reaction(message_id, ack_emoji)
+            if reaction_id:
+                self._track_reaction(message_id, reaction_id, ack_emoji)
 
             # Parse content
             content_parts = []

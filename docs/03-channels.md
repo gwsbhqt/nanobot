@@ -111,6 +111,7 @@ class ChannelManager:
 - 支持单聊和群聊
 - 群聊中支持 @mention 触发
 - 消息反应 (react_emoji，默认 THUMBSUP)
+- 收到消息先添加 GET（`OnIt`）反应；发送最终回复成功后先移除 GET，再添加 DONE（progress 片段不会提前切换）
 - 富文本消息解析（包含 @、链接、图片等元素）
 - 图片下载（通过 Feishu API 获取 image_key 对应的文件）
 - 支持 encrypt_key 和 verification_token

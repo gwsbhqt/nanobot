@@ -9,6 +9,8 @@ from nanobot.agent.loop import AgentLoop
 from nanobot.agent.tools.message import MessageTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
+from nanobot.channels.feishu import FeishuChannel
+from nanobot.config.schema import FeishuConfig
 from nanobot.providers.base import LLMResponse, ToolCallRequest
 
 
@@ -86,6 +88,39 @@ class TestMessageToolSuppressLogic:
         assert result is not None
         assert "Hello" in result.content
 
+    @pytest.mark.asyncio
+    async def test_retry_once_when_llm_returns_empty_content(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        calls = iter([
+            LLMResponse(content="", tool_calls=[]),
+            LLMResponse(content="pwd 是 /Users/bytedance/project/nanobot", tool_calls=[]),
+        ])
+        loop.provider.chat = AsyncMock(side_effect=lambda *a, **kw: next(calls))
+        loop.tools.get_definitions = MagicMock(return_value=[])
+
+        msg = InboundMessage(channel="feishu", sender_id="user1", chat_id="chat123", content="是的")
+        result = await loop._process_message(msg)
+
+        assert result is not None
+        assert "pwd 是" in result.content
+        assert loop.provider.chat.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_empty_content_after_retry(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        loop.provider.chat = AsyncMock(side_effect=[
+            LLMResponse(content="", tool_calls=[]),
+            LLMResponse(content="", tool_calls=[]),
+        ])
+        loop.tools.get_definitions = MagicMock(return_value=[])
+
+        msg = InboundMessage(channel="feishu", sender_id="user1", chat_id="chat123", content="是的")
+        result = await loop._process_message(msg)
+
+        assert result is not None
+        assert result.content == "I've completed processing but have no response to give."
+        assert loop.provider.chat.await_count == 2
+
 
 class TestMessageToolTurnTracking:
 
@@ -101,3 +136,81 @@ class TestMessageToolTurnTracking:
         tool._sent_in_turn = True
         tool.start_turn()
         assert not tool._sent_in_turn
+
+
+class TestFeishuReactionCleanup:
+
+    def test_normalize_get_alias(self) -> None:
+        channel = FeishuChannel(
+            FeishuConfig(enabled=True, app_id="cli_xxx", app_secret="sec", react_emoji="GET"),
+            MessageBus(),
+        )
+        assert channel._normalize_emoji(channel.config.react_emoji, channel._ACK_EMOJI) == "OnIt"
+
+    @pytest.mark.asyncio
+    async def test_send_clears_tracked_reaction_on_final_message(self) -> None:
+        channel = FeishuChannel(
+            FeishuConfig(enabled=True, app_id="cli_xxx", app_secret="sec"),
+            MessageBus(),
+        )
+        channel._client = object()
+        channel._pending_reactions["msg_1"] = ("react_1", "THUMBSUP")
+
+        removed: list[tuple[str, str, str]] = []
+        done_added: list[tuple[str, str]] = []
+        channel._send_message_sync = lambda *args, **kwargs: True
+        channel._remove_reaction_sync = (
+            lambda message_id, reaction_id, emoji_type: (
+                removed.append((message_id, reaction_id, emoji_type)) or True
+            )
+        )
+        channel._add_reaction = AsyncMock(side_effect=lambda message_id, emoji: (
+            done_added.append((message_id, emoji)) or "done_reaction_id"
+        ))
+
+        await channel.send(
+            OutboundMessage(
+                channel="feishu",
+                chat_id="ou_user",
+                content="done",
+                metadata={"message_id": "msg_1"},
+            )
+        )
+
+        assert removed == [("msg_1", "react_1", "THUMBSUP")]
+        assert done_added == [("msg_1", "DONE")]
+        assert "msg_1" not in channel._pending_reactions
+
+    @pytest.mark.asyncio
+    async def test_send_does_not_clear_reaction_for_progress_message(self) -> None:
+        channel = FeishuChannel(
+            FeishuConfig(enabled=True, app_id="cli_xxx", app_secret="sec"),
+            MessageBus(),
+        )
+        channel._client = object()
+        channel._pending_reactions["msg_1"] = ("react_1", "THUMBSUP")
+
+        removed: list[tuple[str, str, str]] = []
+        done_added: list[tuple[str, str]] = []
+        channel._send_message_sync = lambda *args, **kwargs: True
+        channel._remove_reaction_sync = (
+            lambda message_id, reaction_id, emoji_type: (
+                removed.append((message_id, reaction_id, emoji_type)) or True
+            )
+        )
+        channel._add_reaction = AsyncMock(side_effect=lambda message_id, emoji: (
+            done_added.append((message_id, emoji)) or "done_reaction_id"
+        ))
+
+        await channel.send(
+            OutboundMessage(
+                channel="feishu",
+                chat_id="ou_user",
+                content="thinking...",
+                metadata={"message_id": "msg_1", "_progress": True},
+            )
+        )
+
+        assert removed == []
+        assert done_added == []
+        assert channel._pending_reactions["msg_1"] == ("react_1", "THUMBSUP")

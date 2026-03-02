@@ -38,6 +38,7 @@ class CustomProvider(LLMProvider):
     def _parse(self, response: Any) -> LLMResponse:
         choice = response.choices[0]
         msg = choice.message
+        content = msg.content or getattr(msg, "refusal", None)
         tool_calls = [
             ToolCallRequest(id=tc.id, name=tc.function.name,
                             arguments=json_repair.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments)
@@ -45,11 +46,10 @@ class CustomProvider(LLMProvider):
         ]
         u = response.usage
         return LLMResponse(
-            content=msg.content, tool_calls=tool_calls, finish_reason=choice.finish_reason or "stop",
+            content=content, tool_calls=tool_calls, finish_reason=choice.finish_reason or "stop",
             usage={"prompt_tokens": u.prompt_tokens, "completion_tokens": u.completion_tokens, "total_tokens": u.total_tokens} if u else {},
             reasoning_content=getattr(msg, "reasoning_content", None) or None,
         )
 
     def get_default_model(self) -> str:
         return self.default_model
-

@@ -187,6 +187,7 @@ class AgentLoop:
         iteration = 0
         final_content = None
         tools_used: list[str] = []
+        empty_response_retries = 0
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -239,6 +240,24 @@ class AgentLoop:
                 if response.finish_reason == "error":
                     logger.error("LLM returned error: {}", (clean or "")[:200])
                     final_content = clean or "Sorry, I encountered an error calling the AI model."
+                    break
+                if clean is None:
+                    if empty_response_retries < 1 and iteration < self.max_iterations:
+                        empty_response_retries += 1
+                        logger.warning(
+                            "LLM returned empty content (finish_reason={}), retrying once",
+                            response.finish_reason,
+                        )
+                        # Runtime-context-tagged nudge: not persisted to session history.
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"{ContextBuilder._RUNTIME_CONTEXT_TAG}\n"
+                                "The previous assistant output was empty. "
+                                "Reply to the user now with one concise helpful message."
+                            ),
+                        })
+                        continue
                     break
                 messages = self.context.add_assistant_message(
                     messages, clean, reasoning_content=response.reasoning_content,
