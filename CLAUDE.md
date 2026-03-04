@@ -66,11 +66,12 @@
 ## 7. 常用命令
 
 ```bash
-uv pip install -e ".[dev]"
-ruff check .
-pytest
-nanobot status
-nanobot agent -m "hello"
+mise install
+mise run setup
+uv run ruff check .
+uv run pytest
+uv run nanobot status
+uv run nanobot agent -m "hello"
 ```
 
 ## 8. 文档同步规则

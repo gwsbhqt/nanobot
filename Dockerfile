@@ -8,18 +8,19 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Install Python dependencies first (cached layer)
-COPY pyproject.toml README.md LICENSE ./
-RUN mkdir -p nanobot && touch nanobot/__init__.py && \
-    uv pip install --system --no-cache . && \
-    rm -rf nanobot
+# Install dependencies first (cached layer)
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy the full source and install
 COPY nanobot/ nanobot/
-RUN uv pip install --system --no-cache .
+RUN uv sync --frozen --no-dev
 
 # Create config directory
 RUN mkdir -p /root/.nanobot
+
+# Use project virtualenv binaries by default
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Gateway default port
 EXPOSE 18790

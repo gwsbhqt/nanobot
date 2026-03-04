@@ -104,6 +104,40 @@ def test_onboard_existing_workspace_safe_create(mock_paths):
     assert (workspace_dir / "AGENTS.md").exists()
 
 
+def test_onboard_existing_config_yes_overwrites_without_prompt(mock_paths):
+    """--yes should overwrite existing config without interactive confirmation."""
+    config_file, _config_example_file, workspace_dir = mock_paths
+    config_file.write_text('{"existing": true}')
+
+    result = runner.invoke(app, ["onboard", "--yes"])
+
+    assert result.exit_code == 0
+    assert "Config already exists" in result.stdout
+    assert "Config reset to defaults" in result.stdout
+    assert workspace_dir.exists()
+
+
+def test_onboard_existing_config_refresh_without_prompt(mock_paths):
+    """--refresh should keep existing values without interactive confirmation."""
+    config_file, _config_example_file, workspace_dir = mock_paths
+    config_file.write_text('{"existing": true}')
+
+    result = runner.invoke(app, ["onboard", "--refresh"])
+
+    assert result.exit_code == 0
+    assert "Config already exists" in result.stdout
+    assert "existing values preserved" in result.stdout
+    assert workspace_dir.exists()
+
+
+def test_onboard_rejects_yes_and_refresh_together(mock_paths):
+    """--yes and --refresh are mutually exclusive."""
+    result = runner.invoke(app, ["onboard", "--yes", "--refresh"])
+
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.stdout
+
+
 def test_config_matches_openrouter_provider_by_default():
     config = Config()
     config.agents.defaults.model = "google/gemini-3.1-flash-lite-preview"

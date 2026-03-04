@@ -5,10 +5,11 @@
 ### 1) 直接安装运行
 
 ```bash
-pip install nanobot-ai
-nanobot onboard
-nanobot status
-nanobot gateway
+mise install
+mise run setup
+uv run nanobot onboard
+uv run nanobot status
+uv run nanobot gateway
 ```
 
 ### 2) Docker 部署
@@ -70,5 +71,5 @@ Gateway 进程（单进程 asyncio）包含：
 
 ```bash
 python3 -m compileall nanobot tests
-pytest
+uv run pytest
 ```

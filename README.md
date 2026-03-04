@@ -99,19 +99,14 @@
 ```bash
 git clone https://github.com/HKUDS/nanobot.git
 cd nanobot
-pip install -e .
+mise install
+mise run setup
 ```
 
-**Install with [uv](https://github.com/astral-sh/uv)** (stable, fast)
+**Install from PyPI with uv** (global command)
 
 ```bash
 uv tool install nanobot-ai
-```
-
-**Install from PyPI** (stable)
-
-```bash
-pip install nanobot-ai
 ```
 
 ## 🚀 Quick Start
@@ -343,7 +338,7 @@ Two transport modes are supported:
 
 | Mode | Config | Example |
 |------|--------|---------|
-| **Stdio** | `command` + `args` | Local process via `npx` / `uvx` |
+| **Stdio** | `command` + `args` | Local process via `npx` / `python -m` / `mise x` |
 | **HTTP** | `url` + `headers` (optional) | Remote endpoint (`https://mcp.example.com/sse`) |
 
 Use `toolTimeout` to override the default 30s per-call timeout for slow servers:

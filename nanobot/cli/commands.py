@@ -154,7 +154,19 @@ def main(
 
 
 @app.command()
-def onboard():
+def onboard(
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Overwrite existing config without interactive prompt",
+    ),
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        help="Refresh existing config without prompt (preserve values, add new fields)",
+    ),
+):
     """Initialize nanobot configuration and workspace."""
     from nanobot.config.loader import (
         get_config_path,
@@ -165,13 +177,20 @@ def onboard():
     from nanobot.config.schema import Config
     from nanobot.utils.helpers import get_workspace_path
     
+    if yes and refresh:
+        console.print("[red]Error: --yes and --refresh are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+
     config_path = get_config_path()
     
     if config_path.exists():
         console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
-        console.print("  [bold]y[/bold] = overwrite with defaults (existing values will be lost)")
-        console.print("  [bold]N[/bold] = refresh config, keeping existing values and adding new fields")
-        if typer.confirm("Overwrite?"):
+        interactive = not yes and not refresh
+        if interactive:
+            console.print("  [bold]y[/bold] = overwrite with defaults (existing values will be lost)")
+            console.print("  [bold]N[/bold] = refresh config, keeping existing values and adding new fields")
+        should_overwrite = yes or (interactive and typer.confirm("Overwrite?"))
+        if should_overwrite:
             config = Config()
             save_config(config)
             console.print(f"[green]✓[/green] Config reset to defaults at {config_path}")
