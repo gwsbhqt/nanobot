@@ -256,7 +256,10 @@ Config file: `~/.nanobot/config.json`
 }
 ```
 
-> Optional: set `providers.openrouter.apiBase` if you use a proxy endpoint.
+> Optional:
+> - set `providers.openrouter.apiBase` if you use a custom OpenRouter endpoint;
+> - set `providers.openrouter.proxy` (and `tools.web.proxy` for web tools) if you need a network proxy.
+> Proxy is disabled by default (`null`) and only enabled when you set it in config.
 > `modelRouting: "auto"` means each task starts with `simpleModel` and upgrades to `complexModel` only when needed.
 
 </details>

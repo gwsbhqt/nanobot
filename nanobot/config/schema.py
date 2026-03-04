@@ -61,6 +61,7 @@ class ProviderConfig(Base):
 
     api_key: str = ""
     api_base: str | None = None
+    proxy: str | None = None
     extra_headers: dict[str, str] | None = None
 
 
@@ -95,6 +96,7 @@ class WebSearchConfig(Base):
 class WebToolsConfig(Base):
     """Web tools configuration."""
 
+    proxy: str | None = None
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
 
 

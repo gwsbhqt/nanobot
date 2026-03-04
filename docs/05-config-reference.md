@@ -32,6 +32,7 @@ nanobot 使用 `pydantic-settings`，支持两种来源：
     "openrouter": {
       "apiKey": "sk-or-...",
       "apiBase": null,
+      "proxy": null,
       "extraHeaders": null
     }
   },
@@ -59,6 +60,7 @@ nanobot 使用 `pydantic-settings`，支持两种来源：
   "tools": {
     "restrictToWorkspace": false,
     "web": {
+      "proxy": null,
       "search": {
         "apiKey": "",
         "maxResults": 5
@@ -86,13 +88,22 @@ nanobot 使用 `pydantic-settings`，支持两种来源：
 - `agents.defaults.provider = "openrouter"`（推荐）
 - `agents.defaults.provider = "auto"`（也会回落到 openrouter）
 
+## 代理（翻墙）配置
+
+- 默认不走代理（`providers.openrouter.proxy = null`，`tools.web.proxy = null`）
+- 需要翻墙时，在配置里手动设置代理地址（如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:7890`）
+- `providers.openrouter.proxy`：用于 LLM 请求（OpenRouter）
+- `tools.web.proxy`：用于 `web_search` / `web_fetch` 工具请求
+
 ## 常用环境变量
 
 ```bash
 NANOBOT_PROVIDERS__OPENROUTER__API_KEY=sk-or-...
+NANOBOT_PROVIDERS__OPENROUTER__PROXY=http://127.0.0.1:7890
 NANOBOT_AGENTS__DEFAULTS__SIMPLE_MODEL=google/gemini-2.5-flash-lite-preview-09-2025
 NANOBOT_AGENTS__DEFAULTS__COMPLEX_MODEL=google/gemini-3.1-flash-lite-preview
 NANOBOT_AGENTS__DEFAULTS__MODEL_ROUTING=auto
+NANOBOT_TOOLS__WEB__PROXY=http://127.0.0.1:7890
 NANOBOT_CHANNELS__FEISHU__ENABLED=true
 NANOBOT_CHANNELS__FEISHU__APP_ID=cli_xxx
 NANOBOT_CHANNELS__FEISHU__APP_SECRET=xxx

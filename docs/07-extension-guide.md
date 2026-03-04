@@ -313,7 +313,7 @@ MCP 服务器的工具会自动注册为 `mcp_{server_name}_{tool_name}`。
 如果提供商兼容 OpenAI API（大多数国内提供商都是）：
 1. 添加 ProviderSpec（设置正确的 `litellm_prefix` 和 `env_key`）
 2. 添加 ProvidersConfig 字段
-3. 在 config.json 中配置 `apiKey` 和 `apiBase`
+3. 在 config.json 中配置 `apiKey`，按需配置 `apiBase` / `proxy`
 
 ### 场景 B: 添加 HTTP API 层（供前端调用）
 

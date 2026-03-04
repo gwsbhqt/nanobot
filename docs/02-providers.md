@@ -68,7 +68,7 @@ OpenRouter 注册项的关键配置：
 `nanobot/cli/commands.py::_make_provider()` 固定返回 `LiteLLMProvider`：
 
 - 使用 `config.get_complex_model()` 做 provider 匹配
-- 使用 `openrouter` 的 `apiKey/apiBase` 初始化 LiteLLM
+- 使用 `openrouter` 的 `apiKey/apiBase/proxy` 初始化 LiteLLM
 
 ## OpenRouter 端点接入
 
@@ -92,7 +92,7 @@ OpenRouter 注册项的关键配置：
 }
 ```
 
-可选：自定义 OpenRouter 基地址（代理场景）：
+可选：自定义 OpenRouter 基地址：
 
 ```json
 {
@@ -100,6 +100,19 @@ OpenRouter 注册项的关键配置：
     "openrouter": {
       "apiKey": "sk-or-...",
       "apiBase": "https://openrouter.ai/api/v1"
+    }
+  }
+}
+```
+
+可选：配置 OpenRouter 网络代理（默认不启用）：
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "apiKey": "sk-or-...",
+      "proxy": "http://127.0.0.1:7890"
     }
   }
 }

@@ -92,6 +92,7 @@ def save_config_example(config_path: Path | None = None) -> Path:
         "providers": {
             "openrouter": {
                 "apiKey": "sk-or-...",
+                "proxy": None,
             },
         },
         "channels": {
@@ -105,6 +106,7 @@ def save_config_example(config_path: Path | None = None) -> Path:
         },
         "tools": {
             "web": {
+                "proxy": None,
                 "search": {
                     "apiKey": "YOUR_BRAVE_SEARCH_API_KEY",
                     "maxResults": 5,

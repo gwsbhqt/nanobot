@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
-from nanobot.cli.commands import app
+from nanobot.cli.commands import _make_provider, app
 from nanobot.config.loader import _migrate_config, save_config, save_config_example
 from nanobot.config.schema import Config
 from nanobot.providers.litellm_provider import LiteLLMProvider
@@ -174,6 +175,16 @@ def test_litellm_provider_gateway_adds_openrouter_prefix():
     assert resolved == "openrouter/google/gemini-3.1-flash-lite-preview"
 
 
+def test_make_provider_passes_openrouter_proxy_from_config():
+    config = Config()
+    config.providers.openrouter.api_key = "sk-or-test"
+    config.providers.openrouter.proxy = "http://127.0.0.1:7890"
+
+    provider = _make_provider(config)
+
+    assert provider.proxy == "http://127.0.0.1:7890"
+
+
 def test_save_config_omits_defaults_and_empty_values(tmp_path):
     config_path = tmp_path / "config.json"
 
@@ -216,6 +227,8 @@ def test_save_config_example_contains_guided_fields(tmp_path):
     assert payload["agents"]["defaults"]["complexModel"] == "google/gemini-3.1-flash-lite-preview"
     assert payload["agents"]["defaults"]["modelRouting"] == "auto"
     assert payload["providers"]["openrouter"]["apiKey"] == "sk-or-..."
+    assert payload["providers"]["openrouter"]["proxy"] is None
+    assert payload["tools"]["web"]["proxy"] is None
     assert payload["channels"]["feishu"]["enabled"] is False
 
 
@@ -315,3 +328,19 @@ def test_litellm_provider_parse_uses_refusal_when_content_empty():
 
     assert parsed.content == "Refused"
     assert parsed.finish_reason == "stop"
+
+
+def test_litellm_provider_sets_proxy_env_when_configured(monkeypatch):
+    proxy = "http://127.0.0.1:7890"
+    for env_name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
+        monkeypatch.delenv(env_name, raising=False)
+
+    LiteLLMProvider(
+        api_key="sk-or-test",
+        provider_name="openrouter",
+        default_model="google/gemini-3.1-flash-lite-preview",
+        proxy=proxy,
+    )
+
+    for env_name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
+        assert os.environ[env_name] == proxy

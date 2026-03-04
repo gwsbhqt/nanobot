@@ -37,12 +37,14 @@ class LiteLLMProvider(LLMProvider):
         self, 
         api_key: str | None = None, 
         api_base: str | None = None,
+        proxy: str | None = None,
         default_model: str = "google/gemini-3.1-flash-lite-preview",
         extra_headers: dict[str, str] | None = None,
         provider_name: str | None = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
+        self.proxy = proxy
         self.extra_headers = extra_headers or {}
         
         # Detect gateway / local deployment.
@@ -53,6 +55,9 @@ class LiteLLMProvider(LLMProvider):
         # Configure environment variables
         if api_key:
             self._setup_env(api_key, api_base, default_model)
+
+        if proxy:
+            self._setup_proxy_env(proxy)
         
         if api_base:
             litellm.api_base = api_base
@@ -61,6 +66,15 @@ class LiteLLMProvider(LLMProvider):
         litellm.suppress_debug_info = True
         # Drop unsupported parameters for providers (e.g., gpt-5 rejects some params)
         litellm.drop_params = True
+
+    @staticmethod
+    def _setup_proxy_env(proxy: str) -> None:
+        """Configure process-level HTTP proxy for SDK/network clients."""
+        proxy = proxy.strip()
+        if not proxy:
+            return
+        for env_name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
+            os.environ[env_name] = proxy
     
     def _setup_env(self, api_key: str, api_base: str | None, model: str) -> None:
         """Set environment variables based on detected provider."""
