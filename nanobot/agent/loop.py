@@ -45,6 +45,30 @@ class AgentLoop:
     """
 
     _TOOL_RESULT_MAX_CHARS = 500
+    _AUTO_UPGRADE_TOOL_ERROR_THRESHOLD = 2
+    _AUTO_UPGRADE_ITERATION_THRESHOLD = 6
+    _COMPLEX_TASK_HINTS = (
+        "architecture",
+        "design",
+        "refactor",
+        "debug",
+        "root cause",
+        "tradeoff",
+        "benchmark",
+        "security",
+        "复杂",
+        "架构",
+        "设计",
+        "重构",
+        "调试",
+        "根因",
+        "方案",
+        "权衡",
+        "多步骤",
+        "多阶段",
+        "算法",
+        "系统性",
+    )
 
     def __init__(
         self,
@@ -52,6 +76,9 @@ class AgentLoop:
         provider: LLMProvider,
         workspace: Path,
         model: str | None = None,
+        simple_model: str | None = None,
+        complex_model: str | None = None,
+        model_routing: str = "auto",
         max_iterations: int = 40,
         temperature: float = 0.1,
         max_tokens: int = 4096,
@@ -71,7 +98,10 @@ class AgentLoop:
         self.channels_config = channels_config
         self.provider = provider
         self.workspace = workspace
-        self.model = model or provider.get_default_model()
+        self.complex_model = complex_model or model or provider.get_default_model()
+        self.simple_model = simple_model or self.complex_model
+        self.model_routing = model_routing
+        self.model = self.complex_model  # Backward-compatible alias for legacy call sites.
         self.max_iterations = max_iterations
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -90,7 +120,7 @@ class AgentLoop:
             provider=provider,
             workspace=workspace,
             bus=bus,
-            model=self.model,
+            model=self.complex_model,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             reasoning_effort=reasoning_effort,
@@ -177,10 +207,41 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    @staticmethod
+    def _is_tool_error_result(result: str) -> bool:
+        """Best-effort check for tool-call failures based on normalized text."""
+        norm = result.strip().lower()
+        error_prefixes = (
+            "error:",
+            "parameter error:",
+            "validation error:",
+            "permission denied",
+            "failed",
+            "traceback",
+        )
+        return any(norm.startswith(prefix) for prefix in error_prefixes)
+
+    def _should_start_with_complex(self, user_message: str) -> bool:
+        """Heuristic: use complex model for long/high-complexity tasks."""
+        text = (user_message or "").strip().lower()
+        if len(text) >= 280:
+            return True
+        return any(hint in text for hint in self._COMPLEX_TASK_HINTS)
+
+    def _pick_initial_model(self, user_message: str) -> str:
+        """Pick initial model according to routing mode."""
+        mode = (self.model_routing or "auto").lower()
+        if mode == "simple":
+            return self.simple_model
+        if mode == "complex":
+            return self.complex_model
+        return self.complex_model if self._should_start_with_complex(user_message) else self.simple_model
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
+        user_message: str = "",
     ) -> tuple[str | None, list[str], list[dict]]:
         """Run the agent iteration loop. Returns (final_content, tools_used, messages)."""
         messages = initial_messages
@@ -188,6 +249,10 @@ class AgentLoop:
         final_content = None
         tools_used: list[str] = []
         empty_response_retries = 0
+        routing_mode = (self.model_routing or "auto").lower()
+        active_model = self._pick_initial_model(user_message)
+        using_complex = active_model == self.complex_model
+        tool_errors = 0
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -195,7 +260,7 @@ class AgentLoop:
             response = await self.provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions(),
-                model=self.model,
+                model=active_model,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
                 reasoning_effort=self.reasoning_effort,
@@ -230,18 +295,48 @@ class AgentLoop:
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    if self._is_tool_error_result(result):
+                        tool_errors += 1
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
+
+                if (
+                    not using_complex
+                    and routing_mode == "auto"
+                    and (
+                        tool_errors >= self._AUTO_UPGRADE_TOOL_ERROR_THRESHOLD
+                        or iteration >= self._AUTO_UPGRADE_ITERATION_THRESHOLD
+                    )
+                ):
+                    active_model = self.complex_model
+                    using_complex = True
+                    logger.info("Auto-upgrade model to complex after {} tool errors", tool_errors)
+                    if on_progress:
+                        await on_progress("Switching to a stronger model for this task.")
             else:
                 clean = self._strip_think(response.content)
                 # Don't persist error responses to session history — they can
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
+                    if not using_complex and routing_mode == "auto":
+                        active_model = self.complex_model
+                        using_complex = True
+                        logger.warning("Simple model error; retrying turn with complex model")
+                        if on_progress:
+                            await on_progress("Switching to a stronger model for this task.")
+                        continue
                     logger.error("LLM returned error: {}", (clean or "")[:200])
                     final_content = clean or "Sorry, I encountered an error calling the AI model."
                     break
                 if clean is None:
+                    if not using_complex and routing_mode == "auto":
+                        active_model = self.complex_model
+                        using_complex = True
+                        logger.warning("Simple model returned empty response; retrying with complex model")
+                        if on_progress:
+                            await on_progress("Switching to a stronger model for this task.")
+                        continue
                     if empty_response_retries < 1 and iteration < self.max_iterations:
                         empty_response_retries += 1
                         logger.warning(
@@ -366,7 +461,7 @@ class AgentLoop:
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
             )
-            final_content, _, all_msgs = await self._run_agent_loop(messages)
+            final_content, _, all_msgs = await self._run_agent_loop(messages, user_message=msg.content)
             self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
             return OutboundMessage(channel=channel, chat_id=chat_id,
@@ -454,7 +549,7 @@ class AgentLoop:
             ))
 
         final_content, _, all_msgs = await self._run_agent_loop(
-            initial_messages, on_progress=on_progress or _bus_progress,
+            initial_messages, on_progress=on_progress or _bus_progress, user_message=msg.content,
         )
 
         if final_content is None:
@@ -511,7 +606,7 @@ class AgentLoop:
     async def _consolidate_memory(self, session, archive_all: bool = False) -> bool:
         """Delegate to MemoryStore.consolidate(). Returns True on success."""
         return await MemoryStore(self.workspace).consolidate(
-            session, self.provider, self.model,
+            session, self.provider, self.simple_model,
             archive_all=archive_all, memory_window=self.memory_window,
         )
 

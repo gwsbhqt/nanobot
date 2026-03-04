@@ -198,7 +198,7 @@ def onboard():
     console.print(f"\n{__logo__} nanobot is ready!")
     console.print("\nNext steps:")
     console.print("  1. Copy values from [cyan].nanobot/config.example.json[/cyan] to [cyan].nanobot/config.json[/cyan]")
-    console.print("     (supported: custom, openrouter)")
+    console.print("     (supported: openrouter)")
     console.print("  2. Chat: [cyan]nanobot agent -m \"Hello!\"[/cyan]")
     console.print("  3. Start gateway: [cyan]nanobot gateway[/cyan]")
 
@@ -209,29 +209,20 @@ def onboard():
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
     from nanobot.providers.litellm_provider import LiteLLMProvider
-    from nanobot.providers.custom_provider import CustomProvider
 
-    model = config.agents.defaults.model
-    provider_name = config.get_provider_name(model)
-    p = config.get_provider(model)
+    complex_model = config.get_complex_model()
+    provider_name = config.get_provider_name(complex_model)
+    p = config.get_provider(complex_model)
 
-    # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
-    if provider_name == "custom":
-        return CustomProvider(
-            api_key=p.api_key if p else "no-key",
-            api_base=config.get_api_base(model) or "http://localhost:8000/v1",
-            default_model=model,
-        )
-
-    if not model.startswith("bedrock/") and not (p and p.api_key):
+    if not complex_model.startswith("bedrock/") and not (p and p.api_key):
         console.print("[red]Error: No API key configured.[/red]")
         console.print("Set one in .nanobot/config.json under providers section")
         raise typer.Exit(1)
 
     return LiteLLMProvider(
         api_key=p.api_key if p else None,
-        api_base=config.get_api_base(model),
-        default_model=model,
+        api_base=config.get_api_base(complex_model),
+        default_model=complex_model,
         extra_headers=p.extra_headers if p else None,
         provider_name=provider_name,
     )
@@ -278,7 +269,10 @@ def gateway(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
-        model=config.agents.defaults.model,
+        model=config.get_complex_model(),
+        simple_model=config.get_simple_model(),
+        complex_model=config.get_complex_model(),
+        model_routing=config.agents.defaults.model_routing,
         temperature=config.agents.defaults.temperature,
         max_tokens=config.agents.defaults.max_tokens,
         max_iterations=config.agents.defaults.max_tool_iterations,
@@ -359,7 +353,7 @@ def gateway(
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         provider=provider,
-        model=agent.model,
+        model=config.get_simple_model(),
         on_execute=on_heartbeat_execute,
         on_notify=on_heartbeat_notify,
         interval_s=hb_cfg.interval_s,
@@ -437,7 +431,10 @@ def agent(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
-        model=config.agents.defaults.model,
+        model=config.get_complex_model(),
+        simple_model=config.get_simple_model(),
+        complex_model=config.get_complex_model(),
+        model_routing=config.agents.defaults.model_routing,
         temperature=config.agents.defaults.temperature,
         max_tokens=config.agents.defaults.max_tokens,
         max_iterations=config.agents.defaults.max_tool_iterations,
@@ -777,7 +774,10 @@ def cron_run(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
-        model=config.agents.defaults.model,
+        model=config.get_complex_model(),
+        simple_model=config.get_simple_model(),
+        complex_model=config.get_complex_model(),
+        model_routing=config.agents.defaults.model_routing,
         temperature=config.agents.defaults.temperature,
         max_tokens=config.agents.defaults.max_tokens,
         max_iterations=config.agents.defaults.max_tool_iterations,
@@ -840,18 +840,14 @@ def status():
     if config_path.exists():
         from nanobot.providers.registry import PROVIDERS
 
-        console.print(f"Model: {config.agents.defaults.model}")
+        console.print(f"Model Routing: {config.agents.defaults.model_routing}")
+        console.print(f"Simple Model: {config.get_simple_model()}")
+        console.print(f"Complex Model: {config.get_complex_model()}")
         
         # Check API keys from registry
         for spec in PROVIDERS:
             p = getattr(config.providers, spec.name, None)
             if p is None:
-                continue
-            if spec.name == "custom":
-                if p.api_base and p.api_key:
-                    console.print(f"{spec.label}: [green]✓ {p.api_base}[/green]")
-                else:
-                    console.print(f"{spec.label}: [dim]not set[/dim]")
                 continue
             has_key = bool(p.api_key)
             console.print(f"{spec.label}: {'[green]✓[/green]' if has_key else '[dim]not set[/dim]'}")

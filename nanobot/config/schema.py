@@ -37,8 +37,12 @@ class AgentDefaults(Base):
     """Default agent configuration."""
 
     workspace: str = ".nanobot/workspace"
-    model: str = "gpt-5.3-codex"
-    provider: str = "custom"  # "custom" | "openrouter" | "auto"
+    # Legacy single-model field (kept for compatibility); defaults to complex_model.
+    model: str = "google/gemini-3.1-flash-lite-preview"
+    simple_model: str = "google/gemini-2.5-flash-lite-preview-09-2025"
+    complex_model: str = "google/gemini-3.1-flash-lite-preview"
+    model_routing: str = "auto"  # "auto" | "simple" | "complex"
+    provider: str = "openrouter"  # "openrouter" | "auto"
     max_tokens: int = 8192
     temperature: float = 0.1
     max_tool_iterations: int = 40
@@ -63,7 +67,6 @@ class ProviderConfig(Base):
 class ProvidersConfig(Base):
     """Configuration for LLM providers."""
 
-    custom: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenAI-compatible endpoint
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
 
 
@@ -150,7 +153,7 @@ class Config(BaseSettings):
             p = getattr(self.providers, forced, None)
             return (p, forced) if p else (None, None)
 
-        model_lower = (model or self.agents.defaults.model).lower()
+        model_lower = (model or self.get_complex_model()).lower()
         model_normalized = model_lower.replace("-", "_")
         model_prefix = model_lower.split("/", 1)[0] if "/" in model_lower else ""
         normalized_prefix = model_prefix.replace("-", "_")
@@ -186,9 +189,25 @@ class Config(BaseSettings):
         return p
 
     def get_provider_name(self, model: str | None = None) -> str | None:
-        """Get matched provider name (e.g. "custom", "openrouter")."""
+        """Get matched provider name (e.g. "openrouter")."""
         _, name = self._match_provider(model)
         return name
+
+    def get_simple_model(self) -> str:
+        """Get configured simple model (fallback to complex/model when unset)."""
+        defaults = self.agents.defaults
+        if defaults.simple_model:
+            return defaults.simple_model
+        if defaults.complex_model:
+            return defaults.complex_model
+        return defaults.model
+
+    def get_complex_model(self) -> str:
+        """Get configured complex model (fallback to legacy model)."""
+        defaults = self.agents.defaults
+        if defaults.complex_model:
+            return defaults.complex_model
+        return defaults.model
 
     def get_api_key(self, model: str | None = None) -> str | None:
         """Get API key for the given model."""

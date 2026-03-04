@@ -1,7 +1,6 @@
 """Provider registry for nanobot.
 
-This fork intentionally keeps only two providers:
-- custom: direct OpenAI-compatible endpoint (bypasses LiteLLM)
+This fork intentionally keeps only one provider:
 - openrouter: gateway provider (through LiteLLM)
 """
 
@@ -53,13 +52,6 @@ class ProviderSpec:
 
 
 PROVIDERS: tuple[ProviderSpec, ...] = (
-    ProviderSpec(
-        name="custom",
-        keywords=(),
-        env_key="",
-        display_name="Custom",
-        is_direct=True,
-    ),
     ProviderSpec(
         name="openrouter",
         keywords=("openrouter",),

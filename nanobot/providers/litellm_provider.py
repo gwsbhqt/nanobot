@@ -37,7 +37,7 @@ class LiteLLMProvider(LLMProvider):
         self, 
         api_key: str | None = None, 
         api_base: str | None = None,
-        default_model: str = "anthropic/claude-opus-4-5",
+        default_model: str = "google/gemini-3.1-flash-lite-preview",
         extra_headers: dict[str, str] | None = None,
         provider_name: str | None = None,
     ):
@@ -68,7 +68,7 @@ class LiteLLMProvider(LLMProvider):
         if not spec:
             return
         if not spec.env_key:
-            # Direct/provider-only specs without env key (for example: custom)
+            # Provider specs without env key are ignored.
             return
 
         # Gateway/local overrides existing env; standard provider doesn't
@@ -108,7 +108,7 @@ class LiteLLMProvider(LLMProvider):
 
     @staticmethod
     def _canonicalize_explicit_prefix(model: str, spec_name: str, canonical_prefix: str) -> str:
-        """Normalize explicit provider prefixes like `github-copilot/...`."""
+        """Normalize explicit provider prefixes like `openrouter/...`."""
         if "/" not in model:
             return model
         prefix, remainder = model.split("/", 1)
@@ -217,7 +217,7 @@ class LiteLLMProvider(LLMProvider):
         if self.api_key:
             kwargs["api_key"] = self.api_key
         
-        # Pass api_base for custom endpoints
+        # Pass api_base override when configured
         if self.api_base:
             kwargs["api_base"] = self.api_base
         

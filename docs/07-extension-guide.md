@@ -37,7 +37,7 @@ class ProvidersConfig(Base):
 
 ### 特殊情况
 
-如果提供商需要完全自定义的 HTTP 协议（像 Codex 那样），需要：
+如果提供商需要完全自定义的 HTTP 协议，需要：
 1. 创建新的 Provider 类（继承 `LLMProvider`）
 2. 在 `cli/commands.py` 的 `_make_provider()` 中添加分支
 

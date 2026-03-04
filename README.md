@@ -37,13 +37,12 @@
 - **2026-02-18** ⚡️ nanobot now supports VolcEngine, MCP custom auth headers, and Anthropic prompt caching.
 - **2026-02-17** 🎉 Released **v0.1.4** — MCP support, progress streaming, new providers, and multiple channel improvements. Please see [release notes](https://github.com/HKUDS/nanobot/releases/tag/v0.1.4) for details.
 - **2026-02-16** 🦞 nanobot now integrates a [ClawHub](https://clawhub.ai) skill — search and install public agent skills.
-- **2026-02-15** 🔑 nanobot now supports OpenAI Codex provider with OAuth login support.
 - **2026-02-14** 🔌 nanobot now supports MCP! See [MCP section](#mcp-model-context-protocol) for details.
 - **2026-02-13** 🎉 Released **v0.1.3.post7** — includes security hardening and multiple improvements. **Please upgrade to the latest version to address security issues**. See [release notes](https://github.com/HKUDS/nanobot/releases/tag/v0.1.3.post7) for more details.
 - **2026-02-12** 🧠 Redesigned memory system — Less code, more reliable. Join the [discussion](https://github.com/HKUDS/nanobot/discussions/566) about it!
 - **2026-02-11** ✨ Enhanced CLI experience and added MiniMax support!
 - **2026-02-10** 🎉 Released **v0.1.3.post6** with improvements! Check the updates [notes](https://github.com/HKUDS/nanobot/releases/tag/v0.1.3.post6) and our [roadmap](https://github.com/HKUDS/nanobot/discussions/431).
-- **2026-02-09** 💬 Added Slack, Email, and QQ support — nanobot now supports multiple chat platforms!
+- **2026-02-09** 💬 Historical note: older multi-channel support branch updates.
 - **2026-02-08** 🔧 Refactored Providers—adding a new LLM provider now takes just 2 simple steps! Check [here](#providers).
 - **2026-02-07** 🚀 Released **v0.1.3.post5** with Qwen support & several key improvements! Check [here](https://github.com/HKUDS/nanobot/releases/tag/v0.1.3.post5) for details.
 - **2026-02-06** ✨ Added Moonshot/Kimi provider, Discord integration, and enhanced security hardening!
@@ -147,8 +146,10 @@ Add or merge these **two parts** into your config (other options have defaults).
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5",
-      "provider": "openrouter"
+      "provider": "openrouter",
+      "simpleModel": "google/gemini-2.5-flash-lite-preview-09-2025",
+      "complexModel": "google/gemini-3.1-flash-lite-preview",
+      "modelRouting": "auto"
     }
   }
 }
@@ -164,257 +165,11 @@ That's it! You have a working AI assistant in 2 minutes.
 
 ## 💬 Chat Apps
 
-Connect nanobot to your favorite chat platform.
+This fork currently supports **Feishu only**.
 
 | Channel | What you need |
 |---------|---------------|
-| **Telegram** | Bot token from @BotFather |
-| **Discord** | Bot token + Message Content intent |
-| **WhatsApp** | QR code scan |
 | **Feishu** | App ID + App Secret |
-| **Mochat** | Claw token (auto-setup available) |
-| **DingTalk** | App Key + App Secret |
-| **Slack** | Bot token + App-Level token |
-| **Email** | IMAP/SMTP credentials |
-| **QQ** | App ID + App Secret |
-
-<details>
-<summary><b>Telegram</b> (Recommended)</summary>
-
-**1. Create a bot**
-- Open Telegram, search `@BotFather`
-- Send `/newbot`, follow prompts
-- Copy the token
-
-**2. Configure**
-
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-> You can find your **User ID** in Telegram settings. It is shown as `@yourUserId`.
-> Copy this value **without the `@` symbol** and paste it into the config file.
-
-
-**3. Run**
-
-```bash
-nanobot gateway
-```
-
-</details>
-
-<details>
-<summary><b>Mochat (Claw IM)</b></summary>
-
-Uses **Socket.IO WebSocket** by default, with HTTP polling fallback.
-
-**1. Ask nanobot to set up Mochat for you**
-
-Simply send this message to nanobot (replace `xxx@xxx` with your real email):
-
-```
-Read https://raw.githubusercontent.com/HKUDS/MoChat/refs/heads/main/skills/nanobot/skill.md and register on MoChat. My Email account is xxx@xxx Bind me as your owner and DM me on MoChat.
-```
-
-nanobot will automatically register, configure `~/.nanobot/config.json`, and connect to Mochat.
-
-**2. Restart gateway**
-
-```bash
-nanobot gateway
-```
-
-That's it — nanobot handles the rest!
-
-<br>
-
-<details>
-<summary>Manual configuration (advanced)</summary>
-
-If you prefer to configure manually, add the following to `~/.nanobot/config.json`:
-
-> Keep `claw_token` private. It should only be sent in `X-Claw-Token` header to your Mochat API endpoint.
-
-```json
-{
-  "channels": {
-    "mochat": {
-      "enabled": true,
-      "base_url": "https://mochat.io",
-      "socket_url": "https://mochat.io",
-      "socket_path": "/socket.io",
-      "claw_token": "claw_xxx",
-      "agent_user_id": "6982abcdef",
-      "sessions": ["*"],
-      "panels": ["*"],
-      "reply_delay_mode": "non-mention",
-      "reply_delay_ms": 120000
-    }
-  }
-}
-```
-
-
-
-</details>
-
-</details>
-
-<details>
-<summary><b>Discord</b></summary>
-
-**1. Create a bot**
-- Go to https://discord.com/developers/applications
-- Create an application → Bot → Add Bot
-- Copy the bot token
-
-**2. Enable intents**
-- In the Bot settings, enable **MESSAGE CONTENT INTENT**
-- (Optional) Enable **SERVER MEMBERS INTENT** if you plan to use allow lists based on member data
-
-**3. Get your User ID**
-- Discord Settings → Advanced → enable **Developer Mode**
-- Right-click your avatar → **Copy User ID**
-
-**4. Configure**
-
-```json
-{
-  "channels": {
-    "discord": {
-      "enabled": true,
-      "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
-    }
-  }
-}
-```
-
-**5. Invite the bot**
-- OAuth2 → URL Generator
-- Scopes: `bot`
-- Bot Permissions: `Send Messages`, `Read Message History`
-- Open the generated invite URL and add the bot to your server
-
-**6. Run**
-
-```bash
-nanobot gateway
-```
-
-</details>
-
-<details>
-<summary><b>Matrix (Element)</b></summary>
-
-Install Matrix dependencies first:
-
-```bash
-pip install nanobot-ai[matrix]
-```
-
-**1. Create/choose a Matrix account**
-
-- Create or reuse a Matrix account on your homeserver (for example `matrix.org`).
-- Confirm you can log in with Element.
-
-**2. Get credentials**
-
-- You need:
-  - `userId` (example: `@nanobot:matrix.org`)
-  - `accessToken`
-  - `deviceId` (recommended so sync tokens can be restored across restarts)
-- You can obtain these from your homeserver login API (`/_matrix/client/v3/login`) or from your client's advanced session settings.
-
-**3. Configure**
-
-```json
-{
-  "channels": {
-    "matrix": {
-      "enabled": true,
-      "homeserver": "https://matrix.org",
-      "userId": "@nanobot:matrix.org",
-      "accessToken": "syt_xxx",
-      "deviceId": "NANOBOT01",
-      "e2eeEnabled": true,
-      "allowFrom": ["@your_user:matrix.org"],
-      "groupPolicy": "open",
-      "groupAllowFrom": [],
-      "allowRoomMentions": false,
-      "maxMediaBytes": 20971520
-    }
-  }
-}
-```
-
-> Keep a persistent `matrix-store` and stable `deviceId` — encrypted session state is lost if these change across restarts.
-
-| Option | Description |
-|--------|-------------|
-| `allowFrom` | User IDs allowed to interact. Empty = all senders. |
-| `groupPolicy` | `open` (default), `mention`, or `allowlist`. |
-| `groupAllowFrom` | Room allowlist (used when policy is `allowlist`). |
-| `allowRoomMentions` | Accept `@room` mentions in mention mode. |
-| `e2eeEnabled` | E2EE support (default `true`). Set `false` for plaintext-only. |
-| `maxMediaBytes` | Max attachment size (default `20MB`). Set `0` to block all media. |
-
-
-
-
-**4. Run**
-
-```bash
-nanobot gateway
-```
-
-</details>
-
-<details>
-<summary><b>WhatsApp</b></summary>
-
-Requires **Node.js ≥18**.
-
-**1. Link device**
-
-```bash
-nanobot channels login
-# Scan QR with WhatsApp → Settings → Linked Devices
-```
-
-**2. Configure**
-
-```json
-{
-  "channels": {
-    "whatsapp": {
-      "enabled": true,
-      "allowFrom": ["+1234567890"]
-    }
-  }
-}
-```
-
-**3. Run** (two terminals)
-
-```bash
-# Terminal 1
-nanobot channels login
-
-# Terminal 2
-nanobot gateway
-```
-
-</details>
 
 <details>
 <summary><b>Feishu (飞书)</b></summary>
@@ -441,14 +196,14 @@ Uses **WebSocket** long connection — no public IP required.
       "appSecret": "xxx",
       "encryptKey": "",
       "verificationToken": "",
-      "allowFrom": ["ou_YOUR_OPEN_ID"]
+      "allowFrom": []
     }
   }
 }
 ```
 
 > `encryptKey` and `verificationToken` are optional for Long Connection mode.
-> `allowFrom`: Add your open_id (find it in nanobot logs when you message the bot). Use `["*"]` to allow all users.
+> `allowFrom`: Leave empty to allow all users, or add `["ou_xxx"]` to restrict access.
 
 **3. Run**
 
@@ -458,181 +213,6 @@ nanobot gateway
 
 > [!TIP]
 > Feishu uses WebSocket to receive messages — no webhook or public IP needed!
-
-</details>
-
-<details>
-<summary><b>QQ (QQ单聊)</b></summary>
-
-Uses **botpy SDK** with WebSocket — no public IP required. Currently supports **private messages only**.
-
-**1. Register & create bot**
-- Visit [QQ Open Platform](https://q.qq.com) → Register as a developer (personal or enterprise)
-- Create a new bot application
-- Go to **开发设置 (Developer Settings)** → copy **AppID** and **AppSecret**
-
-**2. Set up sandbox for testing**
-- In the bot management console, find **沙箱配置 (Sandbox Config)**
-- Under **在消息列表配置**, click **添加成员** and add your own QQ number
-- Once added, scan the bot's QR code with mobile QQ → open the bot profile → tap "发消息" to start chatting
-
-**3. Configure**
-
-> - `allowFrom`: Add your openid (find it in nanobot logs when you message the bot). Use `["*"]` for public access.
-> - For production: submit a review in the bot console and publish. See [QQ Bot Docs](https://bot.q.qq.com/wiki/) for the full publishing flow.
-
-```json
-{
-  "channels": {
-    "qq": {
-      "enabled": true,
-      "appId": "YOUR_APP_ID",
-      "secret": "YOUR_APP_SECRET",
-      "allowFrom": ["YOUR_OPENID"]
-    }
-  }
-}
-```
-
-**4. Run**
-
-```bash
-nanobot gateway
-```
-
-Now send a message to the bot from QQ — it should respond!
-
-</details>
-
-<details>
-<summary><b>DingTalk (钉钉)</b></summary>
-
-Uses **Stream Mode** — no public IP required.
-
-**1. Create a DingTalk bot**
-- Visit [DingTalk Open Platform](https://open-dev.dingtalk.com/)
-- Create a new app -> Add **Robot** capability
-- **Configuration**:
-  - Toggle **Stream Mode** ON
-- **Permissions**: Add necessary permissions for sending messages
-- Get **AppKey** (Client ID) and **AppSecret** (Client Secret) from "Credentials"
-- Publish the app
-
-**2. Configure**
-
-```json
-{
-  "channels": {
-    "dingtalk": {
-      "enabled": true,
-      "clientId": "YOUR_APP_KEY",
-      "clientSecret": "YOUR_APP_SECRET",
-      "allowFrom": ["YOUR_STAFF_ID"]
-    }
-  }
-}
-```
-
-> `allowFrom`: Add your staff ID. Use `["*"]` to allow all users.
-
-**3. Run**
-
-```bash
-nanobot gateway
-```
-
-</details>
-
-<details>
-<summary><b>Slack</b></summary>
-
-Uses **Socket Mode** — no public URL required.
-
-**1. Create a Slack app**
-- Go to [Slack API](https://api.slack.com/apps) → **Create New App** → "From scratch"
-- Pick a name and select your workspace
-
-**2. Configure the app**
-- **Socket Mode**: Toggle ON → Generate an **App-Level Token** with `connections:write` scope → copy it (`xapp-...`)
-- **OAuth & Permissions**: Add bot scopes: `chat:write`, `reactions:write`, `app_mentions:read`
-- **Event Subscriptions**: Toggle ON → Subscribe to bot events: `message.im`, `message.channels`, `app_mention` → Save Changes
-- **App Home**: Scroll to **Show Tabs** → Enable **Messages Tab** → Check **"Allow users to send Slash commands and messages from the messages tab"**
-- **Install App**: Click **Install to Workspace** → Authorize → copy the **Bot Token** (`xoxb-...`)
-
-**3. Configure nanobot**
-
-```json
-{
-  "channels": {
-    "slack": {
-      "enabled": true,
-      "botToken": "xoxb-...",
-      "appToken": "xapp-...",
-      "allowFrom": ["YOUR_SLACK_USER_ID"],
-      "groupPolicy": "mention"
-    }
-  }
-}
-```
-
-**4. Run**
-
-```bash
-nanobot gateway
-```
-
-DM the bot directly or @mention it in a channel — it should respond!
-
-> [!TIP]
-> - `groupPolicy`: `"mention"` (default — respond only when @mentioned), `"open"` (respond to all channel messages), or `"allowlist"` (restrict to specific channels).
-> - DM policy defaults to open. Set `"dm": {"enabled": false}` to disable DMs.
-
-</details>
-
-<details>
-<summary><b>Email</b></summary>
-
-Give nanobot its own email account. It polls **IMAP** for incoming mail and replies via **SMTP** — like a personal email assistant.
-
-**1. Get credentials (Gmail example)**
-- Create a dedicated Gmail account for your bot (e.g. `my-nanobot@gmail.com`)
-- Enable 2-Step Verification → Create an [App Password](https://myaccount.google.com/apppasswords)
-- Use this app password for both IMAP and SMTP
-
-**2. Configure**
-
-> - `consentGranted` must be `true` to allow mailbox access. This is a safety gate — set `false` to fully disable.
-> - `allowFrom`: Add your email address. Use `["*"]` to accept emails from anyone.
-> - `smtpUseTls` and `smtpUseSsl` default to `true` / `false` respectively, which is correct for Gmail (port 587 + STARTTLS). No need to set them explicitly.
-> - Set `"autoReplyEnabled": false` if you only want to read/analyze emails without sending automatic replies.
-
-```json
-{
-  "channels": {
-    "email": {
-      "enabled": true,
-      "consentGranted": true,
-      "imapHost": "imap.gmail.com",
-      "imapPort": 993,
-      "imapUsername": "my-nanobot@gmail.com",
-      "imapPassword": "your-app-password",
-      "smtpHost": "smtp.gmail.com",
-      "smtpPort": 587,
-      "smtpUsername": "my-nanobot@gmail.com",
-      "smtpPassword": "your-app-password",
-      "fromAddress": "my-nanobot@gmail.com",
-      "allowFrom": ["your-real-email@gmail.com"]
-    }
-  }
-}
-```
-
-
-**3. Run**
-
-```bash
-nanobot gateway
-```
 
 </details>
 
@@ -654,120 +234,35 @@ Config file: `~/.nanobot/config.json`
 ### Providers
 
 > [!TIP]
-> - **Groq** provides free voice transcription via Whisper. If configured, Telegram voice messages will be automatically transcribed.
-> - **Zhipu Coding Plan**: If you're on Zhipu's coding plan, set `"apiBase": "https://open.bigmodel.cn/api/coding/paas/v4"` in your zhipu provider config.
-> - **MiniMax (Mainland China)**: If your API key is from MiniMax's mainland China platform (minimaxi.com), set `"apiBase": "https://api.minimaxi.com/v1"` in your minimax provider config.
-> - **VolcEngine Coding Plan**: If you're on VolcEngine's coding plan, set `"apiBase": "https://ark.cn-beijing.volces.com/api/coding/v3"` in your volcengine provider config.
+> - `openrouter` is the recommended default for hosted models.
 
 | Provider | Purpose | Get API Key |
 |----------|---------|-------------|
-| `custom` | Any OpenAI-compatible endpoint (direct, no LiteLLM) | — |
 | `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai) |
-| `anthropic` | LLM (Claude direct) | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` | LLM (GPT direct) | [platform.openai.com](https://platform.openai.com) |
-| `deepseek` | LLM (DeepSeek direct) | [platform.deepseek.com](https://platform.deepseek.com) |
-| `groq` | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com) |
-| `gemini` | LLM (Gemini direct) | [aistudio.google.com](https://aistudio.google.com) |
-| `minimax` | LLM (MiniMax direct) | [platform.minimaxi.com](https://platform.minimaxi.com) |
-| `aihubmix` | LLM (API gateway, access to all models) | [aihubmix.com](https://aihubmix.com) |
-| `siliconflow` | LLM (SiliconFlow/硅基流动) | [siliconflow.cn](https://siliconflow.cn) |
-| `volcengine` | LLM (VolcEngine/火山引擎) | [volcengine.com](https://www.volcengine.com) |
-| `dashscope` | LLM (Qwen) | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `moonshot` | LLM (Moonshot/Kimi) | [platform.moonshot.cn](https://platform.moonshot.cn) |
-| `zhipu` | LLM (Zhipu GLM) | [open.bigmodel.cn](https://open.bigmodel.cn) |
-| `vllm` | LLM (local, any OpenAI-compatible server) | — |
-| `openai_codex` | LLM (Codex, OAuth) | `nanobot provider login openai-codex` |
-| `github_copilot` | LLM (GitHub Copilot, OAuth) | `nanobot provider login github-copilot` |
 
 <details>
-<summary><b>OpenAI Codex (OAuth)</b></summary>
+<summary><b>OpenRouter (Recommended)</b></summary>
 
-Codex uses OAuth instead of API keys. Requires a ChatGPT Plus or Pro account.
-
-**1. Login:**
-```bash
-nanobot provider login openai-codex
-```
-
-**2. Set model** (merge into `~/.nanobot/config.json`):
 ```json
 {
   "agents": {
     "defaults": {
-      "model": "openai-codex/gpt-5.1-codex"
-    }
-  }
-}
-```
-
-**3. Chat:**
-```bash
-nanobot agent -m "Hello!"
-```
-
-> Docker users: use `docker run -it` for interactive OAuth login.
-
-</details>
-
-<details>
-<summary><b>Custom Provider (Any OpenAI-compatible API)</b></summary>
-
-Connects directly to any OpenAI-compatible endpoint — LM Studio, llama.cpp, Together AI, Fireworks, Azure OpenAI, or any self-hosted server. Bypasses LiteLLM; model name is passed as-is.
-
-```json
-{
-  "providers": {
-    "custom": {
-      "apiKey": "your-api-key",
-      "apiBase": "https://api.your-provider.com/v1"
+      "provider": "openrouter",
+      "simpleModel": "google/gemini-2.5-flash-lite-preview-09-2025",
+      "complexModel": "google/gemini-3.1-flash-lite-preview",
+      "modelRouting": "auto"
     }
   },
-  "agents": {
-    "defaults": {
-      "model": "your-model-name"
-    }
-  }
-}
-```
-
-> For local servers that don't require a key, set `apiKey` to any non-empty string (e.g. `"no-key"`).
-
-</details>
-
-<details>
-<summary><b>vLLM (local / OpenAI-compatible)</b></summary>
-
-Run your own model with vLLM or any OpenAI-compatible server, then add to config:
-
-**1. Start the server** (example):
-```bash
-vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
-```
-
-**2. Add to config** (partial — merge into `~/.nanobot/config.json`):
-
-*Provider (key can be any non-empty string for local):*
-```json
-{
   "providers": {
-    "vllm": {
-      "apiKey": "dummy",
-      "apiBase": "http://localhost:8000/v1"
+    "openrouter": {
+      "apiKey": "sk-or-..."
     }
   }
 }
 ```
 
-*Model:*
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": "meta-llama/Llama-3.1-8B-Instruct"
-    }
-  }
-}
-```
+> Optional: set `providers.openrouter.apiBase` if you use a proxy endpoint.
+> `modelRouting: "auto"` means each task starts with `simpleModel` and upgrades to `complexModel` only when needed.
 
 </details>
 
@@ -875,13 +370,12 @@ MCP tools are automatically discovered and registered on startup. The LLM can us
 
 > [!TIP]
 > For production deployments, set `"restrictToWorkspace": true` in your config to sandbox the agent.
-> **Change in source / post-`v0.1.4.post3`:** In `v0.1.4.post3` and earlier, an empty `allowFrom` means "allow all senders". In newer versions (including building from source), **empty `allowFrom` denies all access by default**. To allow all senders, set `"allowFrom": ["*"]`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `tools.restrictToWorkspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
 | `tools.exec.pathAppend` | `""` | Extra directories to append to `PATH` when running shell commands (e.g. `/usr/sbin` for `ufw`). |
-| `channels.*.allowFrom` | `[]` (allow all) | Whitelist of user IDs. Empty = allow everyone; non-empty = only listed users can interact. |
+| `channels.feishu.allowFrom` | `[]` (allow all) | Feishu 用户白名单。为空允许所有用户。 |
 
 
 ## CLI Reference
@@ -895,11 +389,26 @@ MCP tools are automatically discovered and registered on startup. The LLM can us
 | `nanobot agent --logs` | Show runtime logs during chat |
 | `nanobot gateway` | Start the gateway |
 | `nanobot status` | Show status |
-| `nanobot provider login openai-codex` | OAuth login for providers |
-| `nanobot channels login` | Link WhatsApp (scan QR) |
 | `nanobot channels status` | Show channel status |
 
 Interactive mode exits: `exit`, `quit`, `/exit`, `/quit`, `:q`, or `Ctrl+D`.
+
+<details>
+<summary><b>Scheduled Tasks (Cron)</b></summary>
+
+```bash
+# Add a job
+nanobot cron add --name "daily" --message "Good morning!" --cron "0 9 * * *"
+nanobot cron add --name "hourly" --message "Check status" --every 3600
+
+# List jobs
+nanobot cron list
+
+# Remove a job
+nanobot cron remove <job_id>
+```
+
+</details>
 
 <details>
 <summary><b>Heartbeat (Periodic Tasks)</b></summary>
@@ -912,7 +421,7 @@ The gateway wakes up every 30 minutes and checks `HEARTBEAT.md` in your workspac
 ## Periodic Tasks
 
 - [ ] Check weather forecast and send a summary
-- [ ] Scan inbox for urgent emails
+- [ ] Review pending tasks and notify me
 ```
 
 The agent can also manage this file itself — ask it to "add a periodic task" and it will update `HEARTBEAT.md` for you.
@@ -952,7 +461,7 @@ docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
 # Edit config on host to add API keys
 vim ~/.nanobot/config.json
 
-# Run gateway (connects to enabled channels, e.g. Telegram/Discord/Mochat)
+# Run gateway (connects to enabled channels, currently Feishu)
 docker run -v ~/.nanobot:/root/.nanobot -p 18790:18790 nanobot gateway
 
 # Or run a single command

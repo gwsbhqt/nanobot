@@ -8,9 +8,8 @@ import pytest
 from typer.testing import CliRunner
 
 from nanobot.cli.commands import app
-from nanobot.config.loader import save_config, save_config_example
+from nanobot.config.loader import _migrate_config, save_config, save_config_example
 from nanobot.config.schema import Config
-from nanobot.providers.custom_provider import CustomProvider
 from nanobot.providers.litellm_provider import LiteLLMProvider
 from nanobot.providers.registry import find_gateway
 
@@ -105,19 +104,18 @@ def test_onboard_existing_workspace_safe_create(mock_paths):
     assert (workspace_dir / "AGENTS.md").exists()
 
 
-def test_config_matches_custom_provider_by_default():
+def test_config_matches_openrouter_provider_by_default():
     config = Config()
-    config.agents.defaults.model = "gpt-5.3-codex"
-    config.providers.custom.api_key = "test-key"
-    config.providers.custom.api_base = "https://example.com/v1"
+    config.agents.defaults.model = "google/gemini-3.1-flash-lite-preview"
+    config.providers.openrouter.api_key = "sk-or-test"
 
-    assert config.get_provider_name() == "custom"
+    assert config.get_provider_name() == "openrouter"
 
 
 def test_config_matches_openrouter_with_prefix():
     config = Config()
     config.agents.defaults.provider = "auto"
-    config.agents.defaults.model = "openrouter/gpt-5.3-codex"
+    config.agents.defaults.model = "openrouter/google/gemini-3.1-flash-lite-preview"
     config.providers.openrouter.api_key = "sk-or-test"
 
     assert config.get_provider_name() == "openrouter"
@@ -134,12 +132,12 @@ def test_litellm_provider_gateway_adds_openrouter_prefix():
     provider = LiteLLMProvider(
         api_key="sk-or-test",
         provider_name="openrouter",
-        default_model="gpt-5.3-codex",
+        default_model="google/gemini-3.1-flash-lite-preview",
     )
 
-    resolved = provider._resolve_model("gpt-5.3-codex")
+    resolved = provider._resolve_model("google/gemini-3.1-flash-lite-preview")
 
-    assert resolved == "openrouter/gpt-5.3-codex"
+    assert resolved == "openrouter/google/gemini-3.1-flash-lite-preview"
 
 
 def test_save_config_omits_defaults_and_empty_values(tmp_path):
@@ -156,8 +154,7 @@ def test_save_config_omits_defaults_and_empty_values(tmp_path):
 def test_save_config_keeps_only_non_default_values(tmp_path):
     config_path = tmp_path / "config.json"
     cfg = Config()
-    cfg.providers.custom.api_key = "sk-test"
-    cfg.providers.custom.api_base = "https://example.com/v1"
+    cfg.providers.openrouter.api_key = "sk-or-test"
 
     save_config(cfg, config_path=config_path)
 
@@ -166,10 +163,7 @@ def test_save_config_keeps_only_non_default_values(tmp_path):
 
     assert payload == {
         "providers": {
-            "custom": {
-                "apiKey": "sk-test",
-                "apiBase": "https://example.com/v1",
-            }
+            "openrouter": {"apiKey": "sk-or-test"}
         }
     }
 
@@ -182,35 +176,96 @@ def test_save_config_example_contains_guided_fields(tmp_path):
     with open(config_path, encoding="utf-8") as f:
         payload = json.load(f)
 
-    assert payload["agents"]["defaults"]["provider"] == "custom"
-    assert payload["providers"]["custom"]["apiKey"] == "YOUR_API_KEY"
+    assert payload["agents"]["defaults"]["provider"] == "openrouter"
+    assert payload["agents"]["defaults"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert payload["agents"]["defaults"]["simpleModel"] == "google/gemini-2.5-flash-lite-preview-09-2025"
+    assert payload["agents"]["defaults"]["complexModel"] == "google/gemini-3.1-flash-lite-preview"
+    assert payload["agents"]["defaults"]["modelRouting"] == "auto"
     assert payload["providers"]["openrouter"]["apiKey"] == "sk-or-..."
     assert payload["channels"]["feishu"]["enabled"] is False
 
 
-def test_custom_provider_parse_uses_refusal_when_content_empty():
-    provider = CustomProvider(api_key="test", api_base="https://example.com/v1", default_model="gpt-5.3-codex")
-    response = SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(content=None, refusal="I can not do that right now.", tool_calls=[]),
-                finish_reason="stop",
-            )
-        ],
-        usage=None,
-    )
+def test_migrate_config_maps_openai_codex_provider_to_openrouter():
+    payload = {
+        "agents": {
+            "defaults": {
+                "provider": "openai_codex",
+                "model": "google/gemini-3.1-flash-lite-preview",
+            }
+        }
+    }
 
-    parsed = provider._parse(response)
+    migrated = _migrate_config(payload)
 
-    assert parsed.content == "I can not do that right now."
-    assert parsed.finish_reason == "stop"
+    assert migrated["agents"]["defaults"]["provider"] == "openrouter"
+
+
+def test_migrate_config_maps_openai_codex_model_prefix():
+    payload = {
+        "agents": {
+            "defaults": {
+                "provider": "auto",
+                "model": "openai-codex/gpt-5.1-codex",
+            }
+        }
+    }
+
+    migrated = _migrate_config(payload)
+
+    assert migrated["agents"]["defaults"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert migrated["agents"]["defaults"]["complexModel"] == "google/gemini-3.1-flash-lite-preview"
+    assert migrated["agents"]["defaults"]["simpleModel"] == "google/gemini-2.5-flash-lite-preview-09-2025"
+
+
+def test_migrate_config_backfills_dual_model_fields():
+    payload = {
+        "agents": {
+            "defaults": {
+                "provider": "openrouter",
+                "model": "google/gemini-3.1-flash-lite-preview",
+            }
+        }
+    }
+
+    migrated = _migrate_config(payload)
+
+    assert migrated["agents"]["defaults"]["complexModel"] == "google/gemini-3.1-flash-lite-preview"
+    assert migrated["agents"]["defaults"]["simpleModel"] == "google/gemini-2.5-flash-lite-preview-09-2025"
+    assert migrated["agents"]["defaults"]["modelRouting"] == "auto"
+
+
+def test_migrate_config_preserves_snake_case_dual_model_fields():
+    payload = {
+        "agents": {
+            "defaults": {
+                "provider": "openrouter",
+                "simple_model": "google/gemini-2.5-flash-lite-preview-09-2025",
+                "complex_model": "google/gemini-3.1-flash-lite-preview",
+                "model_routing": "simple",
+            }
+        }
+    }
+
+    migrated = _migrate_config(payload)
+
+    assert migrated["agents"]["defaults"]["simpleModel"] == "google/gemini-2.5-flash-lite-preview-09-2025"
+    assert migrated["agents"]["defaults"]["complexModel"] == "google/gemini-3.1-flash-lite-preview"
+    assert migrated["agents"]["defaults"]["modelRouting"] == "simple"
+    assert migrated["agents"]["defaults"]["model"] == "google/gemini-3.1-flash-lite-preview"
+
+
+def test_get_simple_and_complex_models_from_config_defaults():
+    config = Config()
+
+    assert config.get_simple_model() == "google/gemini-2.5-flash-lite-preview-09-2025"
+    assert config.get_complex_model() == "google/gemini-3.1-flash-lite-preview"
 
 
 def test_litellm_provider_parse_uses_refusal_when_content_empty():
     provider = LiteLLMProvider(
         api_key="sk-or-test",
         provider_name="openrouter",
-        default_model="gpt-5.3-codex",
+        default_model="google/gemini-3.1-flash-lite-preview",
     )
     response = SimpleNamespace(
         choices=[

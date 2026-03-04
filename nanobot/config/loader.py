@@ -5,6 +5,9 @@ from pathlib import Path
 
 from nanobot.config.schema import Config
 
+DEFAULT_COMPLEX_MODEL = "google/gemini-3.1-flash-lite-preview"
+DEFAULT_SIMPLE_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
+
 
 def get_config_path() -> Path:
     """Get the default configuration file path."""
@@ -78,16 +81,15 @@ def save_config_example(config_path: Path | None = None) -> Path:
     data = {
         "agents": {
             "defaults": {
-                "provider": "custom",
-                "model": "gpt-5.3-codex",
+                "provider": "openrouter",
+                "model": DEFAULT_COMPLEX_MODEL,
+                "simpleModel": DEFAULT_SIMPLE_MODEL,
+                "complexModel": DEFAULT_COMPLEX_MODEL,
+                "modelRouting": "auto",
                 "workspace": ".nanobot/workspace",
             }
         },
         "providers": {
-            "custom": {
-                "apiKey": "YOUR_API_KEY",
-                "apiBase": "https://your-openai-compatible-endpoint/v1",
-            },
             "openrouter": {
                 "apiKey": "sk-or-...",
             },
@@ -125,6 +127,33 @@ def _migrate_config(data: dict) -> dict:
     exec_cfg = tools.get("exec", {})
     if "restrictToWorkspace" in exec_cfg and "restrictToWorkspace" not in tools:
         tools["restrictToWorkspace"] = exec_cfg.pop("restrictToWorkspace")
+
+    defaults = data.get("agents", {}).get("defaults", {})
+    if defaults:
+        provider = defaults.get("provider")
+        model = defaults.get("model")
+        complex_model = defaults.get("complexModel") or defaults.get("complex_model")
+
+        # Migrate removed Codex endpoint settings to OpenRouter + Gemini defaults.
+        if isinstance(provider, str) and provider.lower().replace("-", "_") == "openai_codex":
+            defaults["provider"] = "openrouter"
+        if isinstance(provider, str) and provider.lower().replace("-", "_") == "custom":
+            defaults["provider"] = "openrouter"
+        if isinstance(model, str) and model.lower().startswith("openai-codex/"):
+            defaults["model"] = DEFAULT_COMPLEX_MODEL
+        if isinstance(complex_model, str) and complex_model.lower().startswith("openai-codex/"):
+            defaults["complexModel"] = DEFAULT_COMPLEX_MODEL
+
+        # Backfill dual-model fields for older configs.
+        if not defaults.get("complexModel"):
+            defaults["complexModel"] = defaults.get("complex_model") or defaults.get("model") or DEFAULT_COMPLEX_MODEL
+        if not defaults.get("simpleModel"):
+            defaults["simpleModel"] = defaults.get("simple_model") or DEFAULT_SIMPLE_MODEL
+        if not defaults.get("modelRouting"):
+            defaults["modelRouting"] = defaults.get("model_routing") or "auto"
+        if not defaults.get("model"):
+            defaults["model"] = defaults["complexModel"]
+
     return data
 
 
