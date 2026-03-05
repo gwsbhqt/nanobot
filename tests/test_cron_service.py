@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 
@@ -57,3 +58,53 @@ async def test_running_service_honors_external_disable(tmp_path) -> None:
         assert called == []
     finally:
         service.stop()
+
+
+def test_add_at_job_with_small_past_skew_runs_immediately(tmp_path) -> None:
+    service = CronService(tmp_path / "cron" / "jobs.json")
+    now_ms = int(time.time() * 1000)
+
+    job = service.add_job(
+        name="past skew",
+        schedule=CronSchedule(kind="at", at_ms=now_ms - 3000),
+        message="hello",
+    )
+
+    assert job.state.next_run_at_ms is not None
+    assert job.state.next_run_at_ms >= now_ms
+
+
+def test_add_at_job_far_in_past_is_rejected(tmp_path) -> None:
+    service = CronService(tmp_path / "cron" / "jobs.json")
+    now_ms = int(time.time() * 1000)
+
+    with pytest.raises(ValueError, match="at time is in the past"):
+        service.add_job(
+            name="too old",
+            schedule=CronSchedule(kind="at", at_ms=now_ms - 120_000),
+            message="hello",
+        )
+
+
+def test_add_job_persists_direct_message_payload_kind(tmp_path) -> None:
+    service = CronService(tmp_path / "cron" / "jobs.json")
+
+    job = service.add_job(
+        name="direct",
+        schedule=CronSchedule(kind="at", at_ms=int(time.time() * 1000) + 60_000),
+        message="ping",
+        payload_kind="direct_message",
+        deliver=True,
+        channel="feishu",
+        to="ou_xxx",
+        source_session_key="feishu:ou_xxx",
+    )
+
+    assert job.payload.kind == "direct_message"
+    assert job.payload.deliver is True
+    assert job.payload.source_session_key == "feishu:ou_xxx"
+
+    reloaded = CronService(tmp_path / "cron" / "jobs.json")
+    jobs = reloaded.list_jobs(include_disabled=True)
+    assert len(jobs) == 1
+    assert jobs[0].payload.source_session_key == "feishu:ou_xxx"

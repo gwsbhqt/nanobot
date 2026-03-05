@@ -311,9 +311,28 @@ def gateway(
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job through the agent."""
+        session_key = (
+            job.payload.source_session_key
+            or (
+                f"{job.payload.channel}:{job.payload.to}"
+                if job.payload.channel and job.payload.to
+                else f"cron:{job.id}"
+            )
+        )
+        if job.payload.kind == "direct_message":
+            if job.payload.deliver and job.payload.to:
+                from nanobot.bus.events import OutboundMessage
+
+                await bus.publish_outbound(OutboundMessage(
+                    channel=job.payload.channel or "cli",
+                    chat_id=job.payload.to,
+                    content=job.payload.message,
+                ))
+            return job.payload.message
+
         response = await agent.process_direct(
             job.payload.message,
-            session_key=f"cron:{job.id}",
+            session_key=session_key,
             channel=job.payload.channel or "cli",
             chat_id=job.payload.to or "direct",
         )
@@ -819,9 +838,20 @@ def cron_run(
     result_holder = []
 
     async def on_job(job: CronJob) -> str | None:
+        session_key = (
+            job.payload.source_session_key
+            or (
+                f"{job.payload.channel}:{job.payload.to}"
+                if job.payload.channel and job.payload.to
+                else f"cron:{job.id}"
+            )
+        )
+        if job.payload.kind == "direct_message":
+            result_holder.append(job.payload.message)
+            return job.payload.message
         response = await agent_loop.process_direct(
             job.payload.message,
-            session_key=f"cron:{job.id}",
+            session_key=session_key,
             channel=job.payload.channel or "cli",
             chat_id=job.payload.to or "direct",
         )

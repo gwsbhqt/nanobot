@@ -560,6 +560,12 @@ Phase 2: 执行
 ### CronTool
 
 Agent 可通过工具调用管理定时任务：
-- `cron(action="add", schedule={...}, task="...")` — 添加任务
+- `cron(action="add", message=..., every_seconds | cron_expr | at)` — 添加任务
 - `cron(action="list")` — 列出任务
-- `cron(action="remove", id="...")` — 删除任务
+- `cron(action="remove", job_id=...)` — 删除任务
+
+执行语义（当前实现）：
+- `at` 一次性提醒默认按原文直发（`direct_message`），避免到点后二次 LLM 改写。
+- `every` / `cron` 周期任务默认走 `agent_turn`，由 Agent 执行并生成结果。
+- `agent_turn` 会优先复用任务来源会话（`source_session_key`）以继承用户语言/偏好上下文。
+- `at` 时间若仅轻微落后（默认 60 秒内）会立即补发；明显过期会拒绝创建。

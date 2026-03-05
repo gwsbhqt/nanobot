@@ -115,6 +115,7 @@ class CronTool(Tool):
 
         # Build schedule
         delete_after = False
+        payload_kind = "agent_turn"
         if every_seconds:
             schedule = CronSchedule(kind="every", every_ms=every_seconds * 1000)
         elif cron_expr:
@@ -129,6 +130,7 @@ class CronTool(Tool):
             at_ms = int(dt.timestamp() * 1000)
             schedule = CronSchedule(kind="at", at_ms=at_ms)
             delete_after = True
+            payload_kind = "direct_message"
         else:
             return "Error: either every_seconds, cron_expr, or at is required"
 
@@ -136,9 +138,11 @@ class CronTool(Tool):
             name=message[:30],
             schedule=schedule,
             message=message,
+            payload_kind=payload_kind,
             deliver=True,
             channel=self._channel,
             to=self._chat_id,
+            source_session_key=f"{self._channel}:{self._chat_id}",
             delete_after_run=delete_after,
         )
         return f"Created job '{job.name}' (id: {job.id})"

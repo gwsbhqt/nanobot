@@ -21,12 +21,13 @@ class CronSchedule:
 @dataclass
 class CronPayload:
     """What to do when the job runs."""
-    kind: Literal["system_event", "agent_turn"] = "agent_turn"
+    kind: Literal["system_event", "agent_turn", "direct_message"] = "agent_turn"
     message: str = ""
     # Deliver response to channel
     deliver: bool = False
     channel: str | None = None  # e.g. "feishu"
     to: str | None = None  # e.g. phone number
+    source_session_key: str | None = None  # source conversation session for context reuse
 
 
 @dataclass

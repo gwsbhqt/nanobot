@@ -12,6 +12,8 @@ from loguru import logger
 
 from nanobot.cron.types import CronJob, CronJobState, CronPayload, CronSchedule, CronStore
 
+_AT_JOB_GRACE_MS = 60_000
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -20,7 +22,15 @@ def _now_ms() -> int:
 def _compute_next_run(schedule: CronSchedule, now_ms: int) -> int | None:
     """Compute next run time in ms."""
     if schedule.kind == "at":
-        return schedule.at_ms if schedule.at_ms and schedule.at_ms > now_ms else None
+        if not schedule.at_ms:
+            return None
+        if schedule.at_ms > now_ms:
+            return schedule.at_ms
+        # If the scheduled "at" time is only slightly in the past (common when
+        # LLMs round to HH:MM:00), run it immediately instead of dropping it.
+        if now_ms - schedule.at_ms <= _AT_JOB_GRACE_MS:
+            return now_ms + 100
+        return None
 
     if schedule.kind == "every":
         if not schedule.every_ms or schedule.every_ms <= 0:
@@ -107,6 +117,10 @@ class CronService:
                             deliver=j["payload"].get("deliver", False),
                             channel=j["payload"].get("channel"),
                             to=j["payload"].get("to"),
+                            source_session_key=(
+                                j["payload"].get("sourceSessionKey")
+                                or j["payload"].get("source_session_key")
+                            ),
                         ),
                         state=CronJobState(
                             next_run_at_ms=j.get("state", {}).get("nextRunAtMs"),
@@ -154,6 +168,7 @@ class CronService:
                         "deliver": j.payload.deliver,
                         "channel": j.payload.channel,
                         "to": j.payload.to,
+                        "sourceSessionKey": j.payload.source_session_key,
                     },
                     "state": {
                         "nextRunAtMs": j.state.next_run_at_ms,
@@ -288,15 +303,20 @@ class CronService:
         name: str,
         schedule: CronSchedule,
         message: str,
+        payload_kind: str = "agent_turn",
         deliver: bool = False,
         channel: str | None = None,
         to: str | None = None,
+        source_session_key: str | None = None,
         delete_after_run: bool = False,
     ) -> CronJob:
         """Add a new job."""
         store = self._load_store()
         _validate_schedule_for_add(schedule)
         now = _now_ms()
+        next_run = _compute_next_run(schedule, now)
+        if schedule.kind == "at" and next_run is None:
+            raise ValueError("at time is in the past")
 
         job = CronJob(
             id=str(uuid.uuid4())[:8],
@@ -304,13 +324,14 @@ class CronService:
             enabled=True,
             schedule=schedule,
             payload=CronPayload(
-                kind="agent_turn",
+                kind=payload_kind,
                 message=message,
                 deliver=deliver,
                 channel=channel,
                 to=to,
+                source_session_key=source_session_key,
             ),
-            state=CronJobState(next_run_at_ms=_compute_next_run(schedule, now)),
+            state=CronJobState(next_run_at_ms=next_run),
             created_at_ms=now,
             updated_at_ms=now,
             delete_after_run=delete_after_run,
