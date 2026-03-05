@@ -1,16 +1,15 @@
 # Heartbeat Tasks
 
-This file is checked every 30 minutes by your nanobot agent.
-Add tasks below that you want the agent to work on periodically.
+This file is checked periodically by the nanobot heartbeat service.
+Use it only for recurring tasks that should be revisited automatically.
 
-If this file has no tasks (only headers and comments), the agent will skip the heartbeat.
+If this file has no active tasks, heartbeat execution should be skipped.
 
 ## Active Tasks
 
-<!-- Add your periodic tasks below this line -->
+<!-- Add recurring tasks below. Use clear trigger/goal/result wording. -->
 
 
 ## Completed
 
-<!-- Move completed tasks here or delete them -->
-
+<!-- Move completed recurring tasks here (or delete them). -->

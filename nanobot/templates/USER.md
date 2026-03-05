@@ -1,49 +1,45 @@
 # User Profile
 
-Information about the user to help personalize interactions.
+This file stores stable user preferences and context.
+
+## Profile Status
+
+- **Customized**: no
+- **Last Updated**: (YYYY-MM-DD)
 
 ## Basic Information
 
-- **Name**: (your name)
-- **Timezone**: (your timezone, e.g., UTC+8)
-- **Language**: (preferred language)
+- **Preferred Name**: (to be confirmed)
+- **Timezone**: (to be confirmed)
+- **Primary Language**: Chinese
 
-## Preferences
+## Interaction Preferences
 
-### Communication Style
-
-- [ ] Casual
-- [ ] Professional
-- [ ] Technical
-
-### Response Length
-
-- [ ] Brief and concise
-- [ ] Detailed explanations
-- [ ] Adaptive based on question
-
-### Technical Level
-
-- [ ] Beginner
-- [ ] Intermediate
-- [ ] Expert
+- **How Assistant Addresses User**: (to be confirmed)
+- **Expected Relationship Style**: (e.g., partner, coach, teammate)
+- **Preferred Tone**: (e.g., concise, professional, technical)
+- **Response Length Preference**: (e.g., brief, detailed, adaptive)
 
 ## Work Context
 
-- **Primary Role**: (your role, e.g., developer, researcher)
-- **Main Projects**: (what you're working on)
-- **Tools You Use**: (IDEs, languages, frameworks)
+- **Primary Role**: (to be confirmed)
+- **Main Projects**: (to be confirmed)
+- **Tools/Stack**: (to be confirmed)
 
-## Topics of Interest
+## Long-Term Goals
 
 - 
 - 
-- 
+
+## Repeated Patterns to Preserve
+
+- (Add confirmed recurring preferences or rules here)
 
 ## Special Instructions
 
-(Any specific instructions for how the assistant should behave)
+- 
 
 ---
 
-*Edit this file to customize nanobot's behavior for your needs.*
+Update this file only with confirmed and stable user preferences.
+Keep this file in English.
