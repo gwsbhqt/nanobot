@@ -1,14 +1,12 @@
 """LiteLLM provider implementation for multi-provider support."""
 
-import json
 import json_repair
 import os
 import secrets
 import string
 from typing import Any
 
-import litellm
-from litellm import acompletion
+import httpx
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.providers.registry import find_by_model, find_gateway
@@ -58,14 +56,8 @@ class LiteLLMProvider(LLMProvider):
 
         if proxy:
             self._setup_proxy_env(proxy)
-        
-        if api_base:
-            litellm.api_base = api_base
-        
-        # Disable LiteLLM logging noise
-        litellm.suppress_debug_info = True
-        # Drop unsupported parameters for providers (e.g., gpt-5 rejects some params)
-        litellm.drop_params = True
+        self._litellm = None
+        self._acompletion = None
 
     @staticmethod
     def _setup_proxy_env(proxy: str) -> None:
@@ -207,6 +199,89 @@ class LiteLLMProvider(LLMProvider):
         Returns:
             LLMResponse with content and/or tool calls.
         """
+        if self._gateway and self._gateway.name == "openrouter":
+            return await self._chat_openrouter_direct(
+                messages=messages,
+                tools=tools,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                reasoning_effort=reasoning_effort,
+            )
+
+        return await self._chat_litellm(
+            messages=messages,
+            tools=tools,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            reasoning_effort=reasoning_effort,
+        )
+
+    async def _chat_openrouter_direct(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        reasoning_effort: str | None = None,
+    ) -> LLMResponse:
+        """Fast path for OpenRouter without importing LiteLLM."""
+        original_model = model or self.default_model
+        resolved_model = self._resolve_openrouter_model(original_model)
+
+        if self._supports_cache_control(original_model):
+            messages, tools = self._apply_cache_control(messages, tools)
+
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": self._sanitize_messages(self._sanitize_empty_content(messages)),
+            "max_tokens": max(1, max_tokens),
+            "temperature": temperature,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        if reasoning_effort:
+            # OpenRouter forwards this to compatible models; unsupported models ignore/reject.
+            payload["reasoning_effort"] = reasoning_effort
+
+        if not self.api_key:
+            return LLMResponse(content="Error calling LLM: missing API key", finish_reason="error")
+
+        base = (self.api_base or (self._gateway.default_api_base if self._gateway else "")).rstrip("/")
+        if not base:
+            base = "https://openrouter.ai/api/v1"
+        url = f"{base}/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            **self.extra_headers,
+        }
+
+        try:
+            async with httpx.AsyncClient(proxy=self.proxy, timeout=httpx.Timeout(60.0)) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+            return self._parse_response(response.json())
+        except Exception as e:
+            return LLMResponse(
+                content=f"Error calling LLM: {str(e)}",
+                finish_reason="error",
+            )
+
+    async def _chat_litellm(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        reasoning_effort: str | None = None,
+    ) -> LLMResponse:
+        """Compatibility path for non-OpenRouter providers via LiteLLM."""
         original_model = model or self.default_model
         model = self._resolve_model(original_model)
 
@@ -246,8 +321,15 @@ class LiteLLMProvider(LLMProvider):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
-        
+
         try:
+            litellm, acompletion = self._load_litellm()
+            if self.api_base:
+                litellm.api_base = self.api_base
+            # Disable LiteLLM logging noise
+            litellm.suppress_debug_info = True
+            # Drop unsupported parameters for providers (e.g., gpt-5 rejects some params)
+            litellm.drop_params = True
             response = await acompletion(**kwargs)
             return self._parse_response(response)
         except Exception as e:
@@ -256,42 +338,75 @@ class LiteLLMProvider(LLMProvider):
                 content=f"Error calling LLM: {str(e)}",
                 finish_reason="error",
             )
-    
+
+    @staticmethod
+    def _pick(obj: Any, key: str, default: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    def _load_litellm(self):
+        """Lazy import to keep CLI startup fast for OpenRouter direct mode."""
+        if self._litellm is None or self._acompletion is None:
+            import litellm
+            from litellm import acompletion
+
+            self._litellm = litellm
+            self._acompletion = acompletion
+        return self._litellm, self._acompletion
+
+    @staticmethod
+    def _resolve_openrouter_model(model: str) -> str:
+        """OpenRouter API expects raw model names, without `openrouter/` prefix."""
+        return model.split("/", 1)[1] if model.startswith("openrouter/") else model
+
     def _parse_response(self, response: Any) -> LLMResponse:
-        """Parse LiteLLM response into our standard format."""
-        choice = response.choices[0]
-        message = choice.message
-        content = message.content or getattr(message, "refusal", None)
-        
+        """Parse LiteLLM/OpenRouter response into our standard format."""
+        choices = self._pick(response, "choices", []) or []
+        if not choices:
+            return LLMResponse(content=None, finish_reason="error")
+
+        choice = choices[0]
+        message = self._pick(choice, "message", {}) or {}
+        content = self._pick(message, "content") or self._pick(message, "refusal")
+
         tool_calls = []
-        if hasattr(message, "tool_calls") and message.tool_calls:
-            for tc in message.tool_calls:
+        raw_tool_calls = self._pick(message, "tool_calls", []) or []
+        if raw_tool_calls:
+            for tc in raw_tool_calls:
+                function = self._pick(tc, "function", {}) or {}
                 # Parse arguments from JSON string if needed
-                args = tc.function.arguments
+                args = self._pick(function, "arguments", {})
                 if isinstance(args, str):
-                    args = json_repair.loads(args)
-                
+                    try:
+                        args = json_repair.loads(args)
+                    except Exception:
+                        args = {}
+                if not isinstance(args, dict):
+                    args = {}
+
                 tool_calls.append(ToolCallRequest(
-                    id=_short_tool_id(),
-                    name=tc.function.name,
+                    id=self._pick(tc, "id", _short_tool_id()),
+                    name=self._pick(function, "name", ""),
                     arguments=args,
                 ))
-        
+
         usage = {}
-        if hasattr(response, "usage") and response.usage:
+        usage_obj = self._pick(response, "usage")
+        if usage_obj:
             usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens,
+                "prompt_tokens": self._pick(usage_obj, "prompt_tokens", 0),
+                "completion_tokens": self._pick(usage_obj, "completion_tokens", 0),
+                "total_tokens": self._pick(usage_obj, "total_tokens", 0),
             }
-        
-        reasoning_content = getattr(message, "reasoning_content", None) or None
-        thinking_blocks = getattr(message, "thinking_blocks", None) or None
-        
+
+        reasoning_content = self._pick(message, "reasoning_content", None) or None
+        thinking_blocks = self._pick(message, "thinking_blocks", None) or None
+
         return LLMResponse(
             content=content,
             tool_calls=tool_calls,
-            finish_reason=choice.finish_reason or "stop",
+            finish_reason=self._pick(choice, "finish_reason", "stop") or "stop",
             usage=usage,
             reasoning_content=reasoning_content,
             thinking_blocks=thinking_blocks,

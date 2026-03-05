@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -344,3 +345,81 @@ def test_litellm_provider_sets_proxy_env_when_configured(monkeypatch):
 
     for env_name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
         assert os.environ[env_name] == proxy
+
+
+def test_openrouter_direct_chat_strips_prefix_and_parses_tool_calls(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_123",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "exec",
+                                        "arguments": '{"command":"pwd"}',
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+
+    class DummyClient:
+        def __init__(self, *args, **kwargs):
+            captured["client_kwargs"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["payload"] = json
+            return DummyResponse()
+
+    monkeypatch.setattr("nanobot.providers.litellm_provider.httpx.AsyncClient", DummyClient)
+
+    provider = LiteLLMProvider(
+        api_key="sk-or-test",
+        provider_name="openrouter",
+        default_model="google/gemini-3.1-flash-lite-preview",
+    )
+
+    response = asyncio.run(
+        provider.chat(
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[{
+                "type": "function",
+                "function": {
+                    "name": "exec",
+                    "description": "run command",
+                    "parameters": {"type": "object", "properties": {"command": {"type": "string"}}},
+                },
+            }],
+            model="openrouter/google/gemini-3.1-flash-lite-preview",
+        )
+    )
+
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert response.has_tool_calls is True
+    assert response.tool_calls[0].name == "exec"
+    assert response.tool_calls[0].arguments == {"command": "pwd"}

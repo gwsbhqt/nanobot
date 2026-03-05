@@ -5,17 +5,13 @@ import os
 import signal
 import select
 import sys
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
-
-from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.patch_stdout import patch_stdout
 
 from nanobot import __version__, __logo__
 from nanobot.config.schema import Config
@@ -34,7 +30,7 @@ EXIT_COMMANDS = {"exit", "quit", "/exit", "/quit", ":q"}
 # CLI input: prompt_toolkit for editing, paste, history, and display
 # ---------------------------------------------------------------------------
 
-_PROMPT_SESSION: PromptSession | None = None
+_PROMPT_SESSION: Any | None = None
 _SAVED_TERM_ATTRS = None  # original termios settings, restored on exit
 
 
@@ -79,6 +75,8 @@ def _restore_terminal() -> None:
 def _init_prompt_session() -> None:
     """Create the prompt_toolkit session with persistent file history."""
     global _PROMPT_SESSION, _SAVED_TERM_ATTRS
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import FileHistory
 
     # Save terminal state so we can restore it on exit
     try:
@@ -123,6 +121,8 @@ async def _read_interactive_input_async() -> str:
     if _PROMPT_SESSION is None:
         raise RuntimeError("Call _init_prompt_session() first")
     try:
+        from prompt_toolkit.formatted_text import HTML
+        from prompt_toolkit.patch_stdout import patch_stdout
         with patch_stdout():
             return await _PROMPT_SESSION.prompt_async(
                 HTML("<b fg='ansiblue'>You:</b> "),
