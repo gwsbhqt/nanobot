@@ -16,9 +16,25 @@ This file stores stable user preferences and context.
 ## Interaction Preferences
 
 - **How Assistant Addresses User**: (to be confirmed)
-- **Expected Relationship Style**: (e.g., partner, coach, teammate)
-- **Preferred Tone**: (e.g., concise, professional, technical)
+- **Expected Relationship Style**: (e.g., boss-assistant, peer partner, coach)
+- **Preferred Tone**: (e.g., concise, professional, technical, warm)
 - **Response Length Preference**: (e.g., brief, detailed, adaptive)
+
+## Persona Selection
+
+- **Current Persona Option**: (e.g., option-1 / option-2 / option-3 / custom)
+- **Accepted Persona Summary**: (to be confirmed)
+- **Can Switch Persona Anytime**: yes
+
+## Detailed Collaboration Contract
+
+- **Decision Preference**: (recommendation-first / options-first)
+- **Risk Appetite**: (conservative / balanced / aggressive)
+- **Clarification Preference**: (ask-first / infer-first)
+- **Output Defaults**: (checklist / table / action items / examples)
+- **Do-Not Style**: (phrases or tones user dislikes)
+- **Priority Rules**: (speed vs depth, cost vs quality, etc.)
+- **Feedback Style**: (direct critique / gentle suggestions)
 
 ## Work Context
 
