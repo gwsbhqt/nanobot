@@ -22,3 +22,15 @@ run = "uv run nanobot onboard --refresh"
 [tasks.smoke]
 description = "Smoke-test direct LLM call without IM channels"
 run = "uv run nanobot agent --logs -m \"只回复：LLM接入成功\""
+
+[tasks.chat]
+description = "Start nanobot interactive CLI chat in terminal"
+run = "uv run nanobot agent"
+
+[tasks.gateway]
+description = "Start nanobot gateway (IM channels, e.g. Feishu)"
+run = "uv run nanobot gateway"
+
+[tasks.gateway-verbose]
+description = "Start nanobot gateway with verbose logs"
+run = "uv run nanobot gateway --verbose"
